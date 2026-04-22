@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Cognition Layers Verification Cache Entry",
+  "type": "object",
+  "required": ["key", "tool_name", "scope", "config_hash", "spec_version", "decision", "created_at", "expires_at", "schema_version"],
+  "properties": {
+    "key": { "type": "string" },
+    "tool_name": { "type": "string" },
+    "scope": { "type": "object" },
+    "config_hash": { "type": "string" },
+    "spec_version": { "type": "string" },
+    "decision": { "type": "object" },
+    "created_at": { "type": "string" },
+    "expires_at": { "type": "string" },
+    "schema_version": { "type": "string" }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,21 @@
+plugin:
+  enabled: true
+  profile: core
+  mode: core
+  spec_version: 1.0.0
+  claim_conformance: true
+
+surfaces:
+  cognition_adapter: true
+  event_bus: true
+  cognition_orchestrator: true
+  verification_guardian: true
+  pattern_detector: false
+  pattern_persistence_core: false
+  context_manager: false
+  self_correction_trigger: false
+
+verification:
+  cache_enabled: true
+  cache_ttl_seconds: 300
+  invalidate_on_config_change: true

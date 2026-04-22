@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Cognition Layers Profile Status",
+  "type": "object",
+  "required": ["selected_profile", "effective_profile", "spec_version", "claim_conformance", "conformant", "status", "active_surfaces", "expected_surfaces", "warnings", "unsupported_behaviors"],
+  "properties": {
+    "selected_profile": { "type": "string" },
+    "effective_profile": { "type": "string" },
+    "spec_version": { "type": "string" },
+    "claim_conformance": { "type": "boolean" },
+    "conformant": { "type": "boolean" },
+    "status": { "type": "string" },
+    "active_surfaces": { "type": "object" },
+    "expected_surfaces": { "type": "object" },
+    "warnings": { "type": "array", "items": { "type": "string" } },
+    "unsupported_behaviors": { "type": "array", "items": { "type": "string" } },
+    "updated_at": { "type": "string" }
+  },
+  "additionalProperties": true
+}

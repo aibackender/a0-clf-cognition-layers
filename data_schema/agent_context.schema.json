@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Cognition Layers Agent Context Snapshot",
+  "type": "object",
+  "required": ["schema_version", "agent_id", "context_id", "scope", "trigger", "host_capabilities", "prompt_state", "snapshot", "last_result_present"],
+  "properties": {
+    "schema_version": { "type": "string" },
+    "agent_id": { "type": ["string", "null"] },
+    "context_id": { "type": ["string", "null"] },
+    "scope": { "type": "object" },
+    "trigger": { "type": ["string", "null"] },
+    "tool": { "type": ["object", "null"] },
+    "profile_status": { "type": ["object", "null"] },
+    "host_capabilities": { "type": "object" },
+    "prompt_state": { "type": "object" },
+    "snapshot": { "type": "object" },
+    "last_result_present": { "type": "boolean" },
+    "response_summary": { "type": ["object", "null"] }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,32 @@
+plugin:
+  enabled: true
+  profile: standard
+  mode: standard
+  spec_version: 1.0.0
+  claim_conformance: true
+
+surfaces:
+  cognition_adapter: true
+  event_bus: true
+  cognition_orchestrator: true
+  verification_guardian: true
+  pattern_detector: true
+  pattern_persistence_core: true
+  context_manager: false
+  self_correction_trigger: false
+
+verification:
+  cache_enabled: true
+  cache_ttl_seconds: 300
+  invalidate_on_config_change: true
+
+pattern_memory:
+  store_success_patterns: true
+  store_failure_patterns: true
+  inject_top_k_patterns: 3
+  minimum_pattern_confidence: 0.75
+  min_evidence_count: 1
+  similarity_threshold: 0.92
+  cooldown_sessions: 1
+  default_storage_layer: L2_AGENT
+  max_patterns: 500

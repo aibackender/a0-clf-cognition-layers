@@ -1,0 +1,468 @@
+<div
+  x-data="{
+    config: {},
+    defaults: {
+      plugin: {
+        enabled: true,
+        profile: 'full',
+        spec_version: '1.0.0',
+        claim_conformance: false,
+      },
+      surfaces: {
+        cognition_adapter: true,
+        event_bus: true,
+        cognition_orchestrator: true,
+        verification_guardian: true,
+        pattern_detector: true,
+        pattern_persistence_core: true,
+        context_manager: true,
+        self_correction_trigger: true,
+      },
+      layers: {
+        verification: { enabled: true, mode: 'enforce' },
+        pattern_memory: { enabled: true, mode: 'advisory' },
+        self_correction: { enabled: true, mode: 'advisory' },
+        prompt_policy: { enabled: true, mode: 'standard' },
+        observability: { enabled: true, mode: 'standard' },
+      },
+      verification: {
+        protected_tools: ['code_execution_tool', 'browser_agent'],
+        protected_paths: ['/workspace', '/workspaces'],
+        blocked_shell_patterns: ['rm -rf *', 'chmod -R 777 *'],
+        allowed_domains: [],
+        blocked_domains: [],
+        require_review_for: ['destructive_file_edit', 'external_write', 'credential_exposure'],
+        max_risk_score: 70,
+      },
+      pattern_memory: {
+        inject_top_k_patterns: 3,
+        minimum_pattern_confidence: 0.75,
+      },
+      self_correction: {
+        max_correction_attempts: 2,
+      },
+      bounded_recovery: {
+        enabled: false,
+        allow_auto_continue_after_failure: false,
+        max_restore_resolution: 'context_id',
+        inject_idle_recovery_policy: false,
+      },
+    },
+    surfaceOrder: ['cognition_adapter', 'event_bus', 'cognition_orchestrator', 'verification_guardian', 'pattern_detector', 'pattern_persistence_core', 'context_manager', 'self_correction_trigger'],
+    surfaceMeta: {
+      cognition_adapter: { label: 'Cognition adapter', detail: 'Wraps the host hooks and feeds the CLF runtime.' },
+      event_bus: { label: 'Event bus', detail: 'Publishes runtime events and keeps the surfaces coordinated.' },
+      cognition_orchestrator: { label: 'Cognition orchestrator', detail: 'Builds and runs the CLF action plan for each trigger.' },
+      verification_guardian: { label: 'Verification guardian', detail: 'Evaluates tool calls and decides whether to allow, warn, or block.' },
+      pattern_detector: { label: 'Pattern detector', detail: 'Looks for reusable success and failure patterns after tool runs.' },
+      pattern_persistence_core: { label: 'Pattern persistence core', detail: 'Stores promoted patterns in plugin-local memory.' },
+      context_manager: { label: 'Context manager', detail: 'Restores, compacts, and checkpoints CLF context state.' },
+      self_correction_trigger: { label: 'Self-correction trigger', detail: 'Starts bounded retry guidance when tool flows break down.' },
+    },
+    async initDefaults() {
+      await this.loadDefaults();
+      this.ensureDefaults();
+    },
+    async loadDefaults() {
+      try {
+        const res = await fetch('/api/plugins/cognition_layers/get_defaults', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data && typeof data === 'object') this.defaults = data;
+      } catch (_) {}
+    },
+    mergeDefaults(base, override) {
+      if (Array.isArray(base)) return Array.isArray(override) ? [...override] : [...base];
+      if (base && typeof base === 'object' && !Array.isArray(base)) {
+        const merged = { ...base };
+        if (override && typeof override === 'object' && !Array.isArray(override)) {
+          Object.entries(override).forEach(([key, value]) => {
+            merged[key] = key in merged ? this.mergeDefaults(merged[key], value) : value;
+          });
+        }
+        return merged;
+      }
+      return override ?? base;
+    },
+    ensureDefaults() {
+      const incomingConfig = this.config && typeof this.config === 'object' ? this.config : {};
+      const incomingPlugin = incomingConfig.plugin && typeof incomingConfig.plugin === 'object' ? incomingConfig.plugin : {};
+      const explicitSelfCorrectionMode =
+        incomingConfig.layers &&
+        incomingConfig.layers.self_correction &&
+        incomingConfig.layers.self_correction.mode != null
+          ? incomingConfig.layers.self_correction.mode
+          : null;
+      const ensureList = (value, fallback, { requireNonEmpty = false } = {}) => {
+        if (!Array.isArray(value)) return [...fallback];
+        const cleaned = value.map(v => String(v || '').trim()).filter(Boolean);
+        return requireNonEmpty && cleaned.length === 0 ? [...fallback] : cleaned;
+      };
+      this.config = this.mergeDefaults(this.defaults || {}, this.config || {});
+      this.config.plugin = this.config.plugin || {};
+      if ((!this.config.plugin.profile || !String(this.config.plugin.profile).trim()) && incomingPlugin.mode) {
+        this.config.plugin.profile = incomingPlugin.mode;
+      }
+      delete this.config.plugin.mode;
+      this.config.plugin.profile = this.config.plugin.profile || 'full';
+      this.config.surfaces = this.config.surfaces || {};
+      const core = ['cognition_adapter', 'event_bus', 'cognition_orchestrator', 'verification_guardian'];
+      const standard = core.concat(['pattern_detector', 'pattern_persistence_core']);
+      const full = standard.concat(['context_manager', 'self_correction_trigger']);
+      const selected = this.config.plugin.profile || 'full';
+      const active = selected === 'full' ? full : selected === 'standard' ? standard : core;
+      this.surfaceOrder.forEach(s => {
+        this.config.surfaces[s] = this.config.surfaces[s] ?? active.includes(s);
+      });
+      this.config.layers = this.config.layers || {};
+      this.config.layers.verification = this.config.layers.verification || {};
+      this.config.layers.pattern_memory = this.config.layers.pattern_memory || {};
+      this.config.layers.self_correction = this.config.layers.self_correction || {};
+      this.config.layers.prompt_policy = this.config.layers.prompt_policy || {};
+      this.config.layers.observability = this.config.layers.observability || {};
+      this.config.verification = this.config.verification || {};
+      const defaultVerification = (this.defaults && this.defaults.verification) || {};
+      this.config.verification.protected_tools = ensureList(this.config.verification.protected_tools, defaultVerification.protected_tools || [], { requireNonEmpty: true });
+      this.config.verification.protected_paths = ensureList(this.config.verification.protected_paths, defaultVerification.protected_paths || [], { requireNonEmpty: true });
+      this.config.verification.blocked_shell_patterns = ensureList(this.config.verification.blocked_shell_patterns, defaultVerification.blocked_shell_patterns || [], { requireNonEmpty: true });
+      this.config.verification.allowed_domains = ensureList(this.config.verification.allowed_domains, defaultVerification.allowed_domains || []);
+      this.config.verification.blocked_domains = ensureList(this.config.verification.blocked_domains, defaultVerification.blocked_domains || []);
+      this.config.verification.require_review_for = ensureList(this.config.verification.require_review_for, defaultVerification.require_review_for || [], { requireNonEmpty: true });
+      if (this.config.verification.max_risk_score == null && defaultVerification.max_risk_score != null) this.config.verification.max_risk_score = defaultVerification.max_risk_score;
+      this.config.pattern_memory = this.config.pattern_memory || {};
+      this.config.self_correction = this.config.self_correction || {};
+      this.config.bounded_recovery = this.config.bounded_recovery || {};
+      this.config.prompt_policy = this.config.prompt_policy || {};
+      this.config.observability = this.config.observability || {};
+      this.config.bounded_recovery.enabled = !!this.config.bounded_recovery.enabled;
+      if (this.config.bounded_recovery.allow_auto_continue_after_failure == null) this.config.bounded_recovery.allow_auto_continue_after_failure = false;
+      if (!this.config.bounded_recovery.max_restore_resolution) this.config.bounded_recovery.max_restore_resolution = 'context_id';
+      if (this.config.bounded_recovery.inject_idle_recovery_policy == null) this.config.bounded_recovery.inject_idle_recovery_policy = false;
+      if ((explicitSelfCorrectionMode == null || explicitSelfCorrectionMode === '') && selected === 'full') {
+        this.config.layers.self_correction.mode = 'auto';
+      }
+    },
+    applyProfileDefaults() {
+      const core = ['cognition_adapter', 'event_bus', 'cognition_orchestrator', 'verification_guardian'];
+      const standard = core.concat(['pattern_detector', 'pattern_persistence_core']);
+      const full = standard.concat(['context_manager', 'self_correction_trigger']);
+      const selected = this.config.plugin.profile;
+      if (selected === 'custom') return;
+      const active = selected === 'full' ? full : selected === 'standard' ? standard : core;
+      this.surfaceOrder.forEach(s => this.config.surfaces[s] = active.includes(s));
+      this.config.layers = this.config.layers || {};
+      this.config.layers.self_correction = this.config.layers.self_correction || {};
+      this.config.layers.self_correction.mode = selected === 'full' ? 'auto' : 'advisory';
+    },
+    surfaceLabel(surface) {
+      return (this.surfaceMeta[surface] && this.surfaceMeta[surface].label) || surface;
+    },
+    surfaceDetail(surface) {
+      return (this.surfaceMeta[surface] && this.surfaceMeta[surface].detail) || '';
+    },
+    protectionLevelHelp() {
+      const mode =
+        this.config &&
+        this.config.layers &&
+        this.config.layers.verification &&
+        this.config.layers.verification.mode
+          ? this.config.layers.verification.mode
+          : 'enforce';
+      if (mode === 'monitor') return 'Monitor keeps CLF running but stops blocking tool calls. Risky calls are allowed with a warning, which is the safest temporary relief path.';
+      if (mode === 'off') return 'Off bypasses verification entirely. Use it only when you truly want zero CLF protection checks on tool calls.';
+      return 'Enforce actively blocks risky tool calls. This is the strict default when you want the plugin to guard execution.';
+    },
+    profileHelp() {
+      const selected = (this.config && this.config.plugin && this.config.plugin.profile) || 'full';
+      if (selected === 'standard') return 'Standard adds pattern detection and persistence on top of the core runtime.';
+      if (selected === 'full') return 'Full enables context recovery and automatic self-correction in addition to standard capabilities. Bounded Recovery can narrow that behavior for long-running research runs without changing the certified default.';
+      if (selected === 'custom') return 'Custom preserves your manual surface overrides instead of forcing a predefined CLF profile.';
+      return 'Core keeps orchestration, verification, events, and the adapter active without the heavier recovery surfaces.';
+    },
+    boundedRecoveryHelp() {
+      const enabled =
+        this.config &&
+        this.config.bounded_recovery &&
+        this.config.bounded_recovery.enabled;
+      if (!enabled) {
+        return 'Disabled keeps the certified Full-profile behavior unchanged. Enable this only when you want long-running tasks to stop inheriting broad recovery behavior.';
+      }
+      const restore =
+        this.config &&
+        this.config.bounded_recovery &&
+        this.config.bounded_recovery.max_restore_resolution
+          ? this.config.bounded_recovery.max_restore_resolution
+          : 'context_id';
+      const autoContinue =
+        this.config &&
+        this.config.bounded_recovery &&
+        this.config.bounded_recovery.allow_auto_continue_after_failure;
+      return `Active: recovery restore is capped at ${restore}, auto-continue after failures is ${autoContinue ? 'allowed' : 'blocked'}, and this run is treated as a non-certified behavior override.`;
+    },
+    markSurfaceOverride(surface) {
+      this.config.plugin = this.config.plugin || {};
+      this.config.plugin.profile = 'custom';
+      this.config.surfaces[surface] = !!this.config.surfaces[surface];
+    },
+    ensureVerificationConfig() {
+      this.config = this.config || {};
+      this.config.verification = this.config.verification || {};
+    },
+    verificationItems(key) {
+      this.ensureVerificationConfig();
+      if (!Array.isArray(this.config.verification[key])) this.config.verification[key] = [];
+      return this.config.verification[key];
+    },
+    addVerificationItem(key, seed = '') {
+      this.verificationItems(key).push(seed);
+    },
+    removeVerificationItem(key, index) {
+      this.verificationItems(key).splice(index, 1);
+    },
+    trimVerificationItem(key, index) {
+      const items = this.verificationItems(key);
+      if (index < 0 || index >= items.length) return;
+      const cleaned = String(items[index] || '').trim();
+      if (cleaned) items[index] = cleaned;
+      else items.splice(index, 1);
+    },
+    parseList(text) { return String(text || '').split('\n').map(s => s.trim()).filter(Boolean); },
+    formatList(items) { return (items || []).join('\n'); }
+  }"
+  x-init="initDefaults()"
+  class="space-y-6 text-sm"
+>
+  <div class="rounded border border-zinc-700 p-5 space-y-4">
+    <div class="space-y-1">
+      <div class="font-semibold text-base">Cognition Layers v2 Runtime</div>
+      <p class="text-zinc-300">Agent Zero hooks stay thin; the plugin runtime does the work. These settings keep the profile, protection level, and low-level overrides in one predictable place.</p>
+    </div>
+    <div class="grid gap-4 md:grid-cols-2">
+      <div class="space-y-3">
+        <label class="flex items-center gap-2">
+          <input type="checkbox" x-model="config.plugin.enabled" />
+          <span>Plugin enabled</span>
+        </label>
+        <p class="text-zinc-400">Disable this only when you want a full CLF shutdown. For temporary relief from blocked tool calls, keep the plugin on and set Protection level to <span class="font-medium text-zinc-200">monitor</span>.</p>
+      </div>
+      <div class="space-y-3">
+        <label class="block">
+          <div>Selected profile</div>
+          <select class="w-full mt-1 bg-zinc-900 text-zinc-100 border border-zinc-700 rounded p-2" x-model="config.plugin.profile" @change="applyProfileDefaults()">
+            <option value="core">core</option>
+            <option value="standard">standard</option>
+            <option value="full">full</option>
+            <option value="custom">custom</option>
+          </select>
+        </label>
+        <p class="text-zinc-400" x-text="profileHelp()"></p>
+      </div>
+    </div>
+    <label class="flex items-center gap-2">
+      <input type="checkbox" x-model="config.plugin.claim_conformance" />
+      <span>Claim CLF conformance only after required suites pass</span>
+    </label>
+  </div>
+
+  <div class="rounded border border-zinc-700 p-5 space-y-4">
+    <div class="space-y-1">
+      <div class="font-semibold">Protections</div>
+      <p class="text-zinc-300">Verification decides whether CLF blocks, warns, or ignores risky tool calls. The fields below are ordered from the top-level policy down to the specific lists it checks.</p>
+    </div>
+    <div class="grid gap-4 lg:grid-cols-2">
+      <div class="space-y-3">
+        <label class="block">
+          <div>Protection level</div>
+          <select class="w-full mt-1 bg-zinc-900 text-zinc-100 border border-zinc-700 rounded p-2" x-model="config.layers.verification.mode">
+            <option value="enforce">enforce</option>
+            <option value="monitor">monitor</option>
+            <option value="off">off</option>
+          </select>
+        </label>
+        <p class="rounded border border-zinc-800 bg-zinc-900/70 px-3 py-2 text-zinc-300" x-text="protectionLevelHelp()"></p>
+        <label class="block">
+          <div>Max risk score</div>
+          <input class="w-full mt-1 bg-zinc-900 text-zinc-100 border border-zinc-700 rounded p-2" type="number" min="0" max="100" x-model.number="config.verification.max_risk_score" />
+        </label>
+        <div class="space-y-2">
+          <div class="flex items-center justify-between gap-3">
+            <div>Protected tools</div>
+            <button type="button" class="rounded border border-zinc-700 px-2 py-1 text-xs text-zinc-200 hover:bg-zinc-800" @click="addVerificationItem('protected_tools')">Add tool</button>
+          </div>
+          <template x-if="verificationItems('protected_tools').length === 0">
+            <div class="rounded border border-dashed border-zinc-700 px-3 py-2 text-zinc-500">No tools configured.</div>
+          </template>
+          <template x-for="(item, index) in verificationItems('protected_tools')" :key="'protected-tool-' + index">
+            <div class="flex items-center gap-2">
+              <input class="flex-1 bg-zinc-900 text-zinc-100 border border-zinc-700 rounded p-2" x-model="config.verification.protected_tools[index]" @blur="trimVerificationItem('protected_tools', index)" />
+              <button type="button" class="rounded border border-zinc-700 px-2 py-2 text-xs text-zinc-200 hover:bg-zinc-800" @click="removeVerificationItem('protected_tools', index)">Remove</button>
+            </div>
+          </template>
+        </div>
+        <div class="space-y-2">
+          <div class="flex items-center justify-between gap-3">
+            <div>Require review for</div>
+            <button type="button" class="rounded border border-zinc-700 px-2 py-1 text-xs text-zinc-200 hover:bg-zinc-800" @click="addVerificationItem('require_review_for')">Add rule</button>
+          </div>
+          <template x-if="verificationItems('require_review_for').length === 0">
+            <div class="rounded border border-dashed border-zinc-700 px-3 py-2 text-zinc-500">No review categories configured.</div>
+          </template>
+          <template x-for="(item, index) in verificationItems('require_review_for')" :key="'review-rule-' + index">
+            <div class="flex items-center gap-2">
+              <input class="flex-1 bg-zinc-900 text-zinc-100 border border-zinc-700 rounded p-2" x-model="config.verification.require_review_for[index]" @blur="trimVerificationItem('require_review_for', index)" />
+              <button type="button" class="rounded border border-zinc-700 px-2 py-2 text-xs text-zinc-200 hover:bg-zinc-800" @click="removeVerificationItem('require_review_for', index)">Remove</button>
+            </div>
+          </template>
+        </div>
+      </div>
+      <div class="space-y-3">
+        <div class="space-y-2">
+          <div class="flex items-center justify-between gap-3">
+            <div>Protected paths</div>
+            <button type="button" class="rounded border border-zinc-700 px-2 py-1 text-xs text-zinc-200 hover:bg-zinc-800" @click="addVerificationItem('protected_paths')">Add path</button>
+          </div>
+          <template x-if="verificationItems('protected_paths').length === 0">
+            <div class="rounded border border-dashed border-zinc-700 px-3 py-2 text-zinc-500">No paths configured.</div>
+          </template>
+          <template x-for="(item, index) in verificationItems('protected_paths')" :key="'protected-path-' + index">
+            <div class="flex items-center gap-2">
+              <input class="flex-1 bg-zinc-900 text-zinc-100 border border-zinc-700 rounded p-2" x-model="config.verification.protected_paths[index]" @blur="trimVerificationItem('protected_paths', index)" />
+              <button type="button" class="rounded border border-zinc-700 px-2 py-2 text-xs text-zinc-200 hover:bg-zinc-800" @click="removeVerificationItem('protected_paths', index)">Remove</button>
+            </div>
+          </template>
+        </div>
+        <div class="space-y-2">
+          <div class="flex items-center justify-between gap-3">
+            <div>Blocked shell operations</div>
+            <button type="button" class="rounded border border-zinc-700 px-2 py-1 text-xs text-zinc-200 hover:bg-zinc-800" @click="addVerificationItem('blocked_shell_patterns')">Add pattern</button>
+          </div>
+          <template x-if="verificationItems('blocked_shell_patterns').length === 0">
+            <div class="rounded border border-dashed border-zinc-700 px-3 py-2 text-zinc-500">No blocked shell patterns configured.</div>
+          </template>
+          <template x-for="(item, index) in verificationItems('blocked_shell_patterns')" :key="'blocked-shell-' + index">
+            <div class="flex items-center gap-2">
+              <input class="flex-1 bg-zinc-900 text-zinc-100 border border-zinc-700 rounded p-2" x-model="config.verification.blocked_shell_patterns[index]" @blur="trimVerificationItem('blocked_shell_patterns', index)" />
+              <button type="button" class="rounded border border-zinc-700 px-2 py-2 text-xs text-zinc-200 hover:bg-zinc-800" @click="removeVerificationItem('blocked_shell_patterns', index)">Remove</button>
+            </div>
+          </template>
+        </div>
+        <div class="space-y-2">
+          <div class="flex items-center justify-between gap-3">
+            <div>Allowed domains</div>
+            <button type="button" class="rounded border border-zinc-700 px-2 py-1 text-xs text-zinc-200 hover:bg-zinc-800" @click="addVerificationItem('allowed_domains')">Add domain</button>
+          </div>
+          <template x-if="verificationItems('allowed_domains').length === 0">
+            <div class="rounded border border-dashed border-zinc-700 px-3 py-2 text-zinc-500">No allowed domains configured.</div>
+          </template>
+          <template x-for="(item, index) in verificationItems('allowed_domains')" :key="'allowed-domain-' + index">
+            <div class="flex items-center gap-2">
+              <input class="flex-1 bg-zinc-900 text-zinc-100 border border-zinc-700 rounded p-2" x-model="config.verification.allowed_domains[index]" @blur="trimVerificationItem('allowed_domains', index)" />
+              <button type="button" class="rounded border border-zinc-700 px-2 py-2 text-xs text-zinc-200 hover:bg-zinc-800" @click="removeVerificationItem('allowed_domains', index)">Remove</button>
+            </div>
+          </template>
+        </div>
+        <div class="space-y-2">
+          <div class="flex items-center justify-between gap-3">
+            <div>Blocked domains</div>
+            <button type="button" class="rounded border border-zinc-700 px-2 py-1 text-xs text-zinc-200 hover:bg-zinc-800" @click="addVerificationItem('blocked_domains')">Add domain</button>
+          </div>
+          <template x-if="verificationItems('blocked_domains').length === 0">
+            <div class="rounded border border-dashed border-zinc-700 px-3 py-2 text-zinc-500">No blocked domains configured.</div>
+          </template>
+          <template x-for="(item, index) in verificationItems('blocked_domains')" :key="'blocked-domain-' + index">
+            <div class="flex items-center gap-2">
+              <input class="flex-1 bg-zinc-900 text-zinc-100 border border-zinc-700 rounded p-2" x-model="config.verification.blocked_domains[index]" @blur="trimVerificationItem('blocked_domains', index)" />
+              <button type="button" class="rounded border border-zinc-700 px-2 py-2 text-xs text-zinc-200 hover:bg-zinc-800" @click="removeVerificationItem('blocked_domains', index)">Remove</button>
+            </div>
+          </template>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="rounded border border-zinc-700 p-5 space-y-4">
+    <div class="space-y-1">
+      <div class="font-semibold">Recovery &amp; Patterns</div>
+      <p class="text-zinc-300">These controls tune how much CLF learns from recent work and how aggressively it should try to recover from bad tool outcomes.</p>
+    </div>
+    <div class="grid gap-4 md:grid-cols-2">
+      <div class="space-y-3">
+        <label class="block">
+          <div>Inject top-K patterns</div>
+          <input class="w-full mt-1 bg-zinc-900 text-zinc-100 border border-zinc-700 rounded p-2" type="number" min="0" max="10" x-model.number="config.pattern_memory.inject_top_k_patterns" />
+        </label>
+        <label class="block">
+          <div>Minimum confidence</div>
+          <input class="w-full mt-1 bg-zinc-900 text-zinc-100 border border-zinc-700 rounded p-2" type="number" min="0" max="1" step="0.01" x-model.number="config.pattern_memory.minimum_pattern_confidence" />
+        </label>
+      </div>
+      <div class="space-y-3">
+        <label class="block">
+          <div>Self-correction mode</div>
+          <select class="w-full mt-1 bg-zinc-900 text-zinc-100 border border-zinc-700 rounded p-2" x-model="config.layers.self_correction.mode">
+            <option value="off">off</option>
+            <option value="advisory">advisory</option>
+            <option value="auto">auto</option>
+          </select>
+        </label>
+        <label class="block">
+          <div>Max correction attempts</div>
+          <input class="w-full mt-1 bg-zinc-900 text-zinc-100 border border-zinc-700 rounded p-2" type="number" min="0" max="10" x-model.number="config.self_correction.max_correction_attempts" />
+        </label>
+      </div>
+    </div>
+    <div class="rounded border border-zinc-800 bg-zinc-950/40 p-4 space-y-3">
+      <div class="space-y-1">
+        <div class="font-medium text-zinc-100">Bounded Recovery</div>
+        <p class="text-zinc-400">Use this non-certified override for long-running research tasks when Full recovery is too persistent or keeps extending the run.</p>
+      </div>
+      <label class="flex items-center gap-2">
+        <input type="checkbox" x-model="config.bounded_recovery.enabled" />
+        <span>Enable bounded recovery override</span>
+      </label>
+      <p class="rounded border border-zinc-800 bg-zinc-900/70 px-3 py-2 text-zinc-300" x-text="boundedRecoveryHelp()"></p>
+      <div class="grid gap-4 md:grid-cols-3">
+        <label class="flex items-center gap-2 rounded border border-zinc-800 bg-zinc-950/40 px-3 py-3">
+          <input type="checkbox" x-model="config.bounded_recovery.allow_auto_continue_after_failure" />
+          <span>Allow auto-continue after failure</span>
+        </label>
+        <label class="block">
+          <div>Max restore resolution</div>
+          <select class="w-full mt-1 bg-zinc-900 text-zinc-100 border border-zinc-700 rounded p-2" x-model="config.bounded_recovery.max_restore_resolution">
+            <option value="context_id">context_id</option>
+            <option value="scope_label">scope_label</option>
+            <option value="scope_project">scope_project</option>
+            <option value="latest_compatible">latest_compatible</option>
+          </select>
+        </label>
+        <label class="flex items-center gap-2 rounded border border-zinc-800 bg-zinc-950/40 px-3 py-3">
+          <input type="checkbox" x-model="config.bounded_recovery.inject_idle_recovery_policy" />
+          <span>Inject idle recovery policy</span>
+        </label>
+      </div>
+    </div>
+  </div>
+
+  <div class="rounded border border-zinc-700 p-5 space-y-4">
+    <div class="space-y-1">
+      <div class="font-semibold">Advanced Surface Overrides</div>
+      <p class="text-zinc-300">Manual surface changes are rendered in fixed CLF order and immediately switch the profile to <span class="font-medium text-zinc-200">custom</span> so the override stays explicit.</p>
+    </div>
+    <div class="space-y-3">
+      <template x-for="surface in surfaceOrder" :key="surface">
+        <label class="flex items-start justify-between gap-4 rounded border border-zinc-800 bg-zinc-900/40 px-3 py-3">
+          <span class="space-y-1">
+            <span class="block font-medium text-zinc-100" x-text="surfaceLabel(surface)"></span>
+            <span class="block text-xs text-zinc-400" x-text="surfaceDetail(surface)"></span>
+          </span>
+          <input type="checkbox" x-model="config.surfaces[surface]" @change="markSurfaceOverride(surface)" />
+        </label>
+      </template>
+    </div>
+    <p class="text-zinc-400">Changing required surfaces can degrade the effective profile to custom. The status API reports that honestly instead of pretending everything is conformant.</p>
+  </div>
+</div>

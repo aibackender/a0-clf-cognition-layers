@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Cognition Layers Event",
+  "type": "object",
+  "required": ["id", "timestamp", "name", "payload"],
+  "properties": {
+    "id": { "type": "string" },
+    "timestamp": { "type": "string" },
+    "name": { "type": "string" },
+    "payload": { "type": "object" }
+  },
+  "additionalProperties": true
+}

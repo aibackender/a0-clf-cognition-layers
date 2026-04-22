@@ -1,0 +1,96 @@
+plugin:
+  enabled: true
+  profile: full
+  spec_version: 1.0.0
+  claim_conformance: false
+
+orchestrator:
+  default_timeout_ms: 1000
+  max_retries: 2
+  retry_backoff_ms: 50
+  max_parallel_actions: 4
+
+surfaces:
+  cognition_adapter: true
+  event_bus: true
+  cognition_orchestrator: true
+  verification_guardian: true
+  pattern_detector: true
+  pattern_persistence_core: true
+  context_manager: true
+  self_correction_trigger: true
+
+layers:
+  verification:
+    enabled: true
+    mode: enforce
+  pattern_memory:
+    enabled: true
+    mode: advisory
+  self_correction:
+    enabled: true
+    mode: advisory
+  prompt_policy:
+    enabled: true
+    mode: standard
+  observability:
+    enabled: true
+    mode: standard
+
+verification:
+  protected_tools:
+    - code_execution_tool
+    - browser_agent
+  protected_paths:
+    - /workspace
+    - /workspaces
+  blocked_shell_patterns:
+    - "rm -rf *"
+    - "chmod -R 777 *"
+  allowed_domains: []
+  blocked_domains: []
+  cache_enabled: true
+  cache_ttl_seconds: 300
+  invalidate_on_config_change: true
+  require_review_for:
+    - destructive_file_edit
+    - external_write
+    - credential_exposure
+  max_risk_score: 70
+
+pattern_memory:
+  store_success_patterns: true
+  store_failure_patterns: true
+  inject_top_k_patterns: 3
+  minimum_pattern_confidence: 0.75
+  min_evidence_count: 1
+  similarity_threshold: 0.92
+  cooldown_sessions: 1
+  default_storage_layer: L2_AGENT
+  max_patterns: 500
+
+self_correction:
+  max_correction_attempts: 2
+  retry_on_validation_failure: true
+  retry_on_tool_not_found: true
+  spawn_subagent_for_strategic_failures: false
+  escalate_after_repeated_failures: true
+
+bounded_recovery:
+  enabled: false
+  allow_auto_continue_after_failure: false
+  max_restore_resolution: context_id
+  inject_idle_recovery_policy: false
+
+prompt_policy:
+  inject_verification_policy: true
+  inject_pattern_hints: true
+  inject_recovery_policy: true
+  verbosity: standard
+  max_injected_chars: 900
+
+observability:
+  log_decisions: true
+  log_rejections: true
+  retain_history_days: 14
+  expose_debug_api: true
