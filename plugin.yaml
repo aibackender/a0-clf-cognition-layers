@@ -1,7 +1,7 @@
 name: cognition_layers
 title: Cognition Layers
 description: Agent Zero plugin hosting a small CLF-style runtime with profiles, thin hooks, verification, events, patterns, and bounded recovery.
-version: 0.2.1
+version: 0.2.2
 settings_sections:
   - agent
   - developer

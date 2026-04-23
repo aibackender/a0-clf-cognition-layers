@@ -4,6 +4,7 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Any
 import json
+import re
 import yaml
 from usr.plugins.cognition_layers.helpers.compat import get_plugin_config
 PLUGIN_NAME="cognition_layers"; PLUGIN_ROOT=Path(__file__).resolve().parents[1]; DEFAULT_CONFIG_PATH=PLUGIN_ROOT/"default_config.yaml"
@@ -15,6 +16,9 @@ _BOUNDED_RECOVERY_DEFAULTS={"enabled":False,"allow_auto_continue_after_failure":
 _RESTORE_RESOLUTIONS=("context_id","scope_label","scope_project","latest_compatible")
 _OBSERVABILITY_LOG_LEVELS=("info","debug")
 _OBSERVABILITY_DEFAULTS={"log_level":"info","log_decisions":True,"log_rejections":True,"retain_history_days":14,"expose_debug_api":True}
+_CONFIG_ROOT_KEYS=("plugin","surfaces","layers","verification","pattern_memory","self_correction","bounded_recovery","prompt_policy","observability","orchestrator")
+_INT_PATTERN=re.compile(r"^-?\d+$")
+_FLOAT_PATTERN=re.compile(r"^-?(?:\d+\.\d+|\d+\.\d*|\.\d+)$")
 
 def load_default_config()->dict[str,Any]:
     if not DEFAULT_CONFIG_PATH.exists(): return {}
@@ -90,6 +94,66 @@ def _migrate_legacy_profile(runtime: dict[str, Any]) -> dict[str, Any]:
         migrated["plugin"] = plugin
     return migrated
 
+def _parse_serialized_value(value: Any) -> Any:
+    if not isinstance(value,str):
+        return value
+    text=value.strip()
+    if text=="":
+        return value
+    try:
+        return json.loads(text)
+    except Exception:
+        lowered=text.lower()
+        if lowered=="true":
+            return True
+        if lowered=="false":
+            return False
+        if lowered in {"null","none"}:
+            return None
+        if _INT_PATTERN.fullmatch(text):
+            try:
+                return int(text)
+            except Exception:
+                return value
+        if _FLOAT_PATTERN.fullmatch(text):
+            try:
+                return float(text)
+            except Exception:
+                return value
+        return value
+
+def _set_dotted_value(target: dict[str, Any], path: str, value: Any) -> None:
+    cur=target
+    parts=[part for part in path.split(".") if part]
+    if not parts:
+        return
+    for part in parts[:-1]:
+        child=cur.get(part)
+        if not isinstance(child,dict):
+            child={}
+        cur[part]=child
+        cur=child
+    cur[parts[-1]]=value
+
+def _normalize_serialized_runtime(runtime: dict[str, Any]) -> dict[str, Any]:
+    normalized:dict[str,Any]={}
+    for key, raw_value in runtime.items():
+        parsed=_parse_serialized_value(raw_value)
+        if isinstance(key,str) and "." in key and key not in _CONFIG_ROOT_KEYS:
+            _set_dotted_value(normalized, key, parsed)
+        else:
+            normalized[key]=parsed
+    return normalized
+
+def _unwrap_saved_ui_shell(runtime: dict[str, Any]) -> dict[str, Any]:
+    unwrapped = deepcopy(runtime)
+    nested = unwrapped.get("config", {}) if isinstance(unwrapped.get("config", {}), dict) else {}
+    has_direct_config = any(key in unwrapped for key in _CONFIG_ROOT_KEYS)
+    has_nested_config = any(key in nested for key in _CONFIG_ROOT_KEYS)
+    if not has_direct_config and has_nested_config:
+        return deepcopy(nested)
+    return unwrapped
+
 def normalize_observability_log_level(value: Any) -> str:
     level=str(value or _OBSERVABILITY_DEFAULTS["log_level"]).strip().lower()
     return level if level in _OBSERVABILITY_LOG_LEVELS else _OBSERVABILITY_DEFAULTS["log_level"]
@@ -100,6 +164,8 @@ def resolve_config(agent:Any|None=None, explicit:dict[str,Any]|None=None)->dict[
         try: runtime=get_plugin_config(PLUGIN_NAME,agent=agent) or {}
         except Exception: runtime={}
     if not isinstance(runtime,dict): runtime={}
+    runtime=_normalize_serialized_runtime(runtime)
+    runtime=_unwrap_saved_ui_shell(runtime)
     runtime=_migrate_legacy_profile(runtime)
     resolved=deep_merge(default,runtime); resolved.setdefault("plugin",{}); resolved.setdefault("layers",{}); resolved.setdefault("surfaces",{}); resolved=_normalize_safety_defaults(resolved, default); resolved=_normalize_bounded_recovery(resolved, runtime)
     plugin=resolved["plugin"]

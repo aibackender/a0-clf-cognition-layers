@@ -1,12 +1,17 @@
 <div
   x-data="{
-    config: {},
     defaults: {
       plugin: {
         enabled: true,
         profile: 'full',
         spec_version: '1.0.0',
         claim_conformance: false,
+      },
+      orchestrator: {
+        default_timeout_ms: 1000,
+        max_retries: 2,
+        retry_backoff_ms: 50,
+        max_parallel_actions: 4,
       },
       surfaces: {
         cognition_adapter: true,
@@ -66,7 +71,41 @@
       context_manager: { label: 'Context manager', detail: 'Restores, compacts, and checkpoints CLF context state.' },
       self_correction_trigger: { label: 'Self-correction trigger', detail: 'Starts bounded retry guidance when tool flows break down.' },
     },
+    initialized: false,
+    activeConfig() {
+      return typeof config !== 'undefined' && config && typeof config === 'object' ? config : null;
+    },
+    configSections() {
+      return ['plugin', 'surfaces', 'orchestrator', 'layers', 'verification', 'pattern_memory', 'self_correction', 'bounded_recovery', 'prompt_policy', 'observability'];
+    },
+    hasPersistedSection(value) {
+      if (!value || typeof value !== 'object') return false;
+      return Object.keys(value).length > 0;
+    },
+    extractPersistedConfig(value) {
+      const candidate = value && typeof value === 'object' ? value : {};
+      const nested = candidate.config && typeof candidate.config === 'object' ? candidate.config : null;
+      const hasDirectConfig = this.configSections().some(section => this.hasPersistedSection(candidate[section]));
+      if (
+        !hasDirectConfig &&
+        nested &&
+        this.configSections().some(section => this.hasPersistedSection(nested[section]))
+      ) {
+        return nested;
+      }
+      return candidate;
+    },
+    normalizeInPlace(target, source) {
+      if (!target || typeof target !== 'object') return;
+      Object.keys(target).forEach((key) => delete target[key]);
+      Object.entries(source || {}).forEach(([key, value]) => {
+        target[key] = value;
+      });
+    },
     async initDefaults() {
+      if (this.initialized) return;
+      this.ensureDefaults();
+      this.initialized = true;
       await this.loadDefaults();
       this.ensureDefaults();
     },
@@ -96,7 +135,9 @@
       return override ?? base;
     },
     ensureDefaults() {
-      const incomingConfig = this.config && typeof this.config === 'object' ? this.config : {};
+      const target = this.activeConfig();
+      if (!target) return;
+      const incomingConfig = this.extractPersistedConfig(target);
       const incomingPlugin = incomingConfig.plugin && typeof incomingConfig.plugin === 'object' ? incomingConfig.plugin : {};
       const explicitSelfCorrectionMode =
         incomingConfig.layers &&
@@ -109,66 +150,71 @@
         const cleaned = value.map(v => String(v || '').trim()).filter(Boolean);
         return requireNonEmpty && cleaned.length === 0 ? [...fallback] : cleaned;
       };
-      this.config = this.mergeDefaults(this.defaults || {}, this.config || {});
-      this.config.plugin = this.config.plugin || {};
-      if ((!this.config.plugin.profile || !String(this.config.plugin.profile).trim()) && incomingPlugin.mode) {
-        this.config.plugin.profile = incomingPlugin.mode;
+      const normalizedConfig = this.mergeDefaults(this.defaults || {}, incomingConfig || {});
+      normalizedConfig.plugin = normalizedConfig.plugin || {};
+      if ((!normalizedConfig.plugin.profile || !String(normalizedConfig.plugin.profile).trim()) && incomingPlugin.mode) {
+        normalizedConfig.plugin.profile = incomingPlugin.mode;
       }
-      delete this.config.plugin.mode;
-      this.config.plugin.profile = this.config.plugin.profile || 'full';
-      this.config.surfaces = this.config.surfaces || {};
+      delete normalizedConfig.plugin.mode;
+      normalizedConfig.plugin.profile = normalizedConfig.plugin.profile || 'full';
+      normalizedConfig.surfaces = normalizedConfig.surfaces || {};
       const core = ['cognition_adapter', 'event_bus', 'cognition_orchestrator', 'verification_guardian'];
       const standard = core.concat(['pattern_detector', 'pattern_persistence_core']);
       const full = standard.concat(['context_manager', 'self_correction_trigger']);
-      const selected = this.config.plugin.profile || 'full';
+      const selected = normalizedConfig.plugin.profile || 'full';
       const active = selected === 'full' ? full : selected === 'standard' ? standard : core;
       this.surfaceOrder.forEach(s => {
-        this.config.surfaces[s] = this.config.surfaces[s] ?? active.includes(s);
+        normalizedConfig.surfaces[s] = normalizedConfig.surfaces[s] ?? active.includes(s);
       });
-      this.config.layers = this.config.layers || {};
-      this.config.layers.verification = this.config.layers.verification || {};
-      this.config.layers.pattern_memory = this.config.layers.pattern_memory || {};
-      this.config.layers.self_correction = this.config.layers.self_correction || {};
-      this.config.layers.prompt_policy = this.config.layers.prompt_policy || {};
-      this.config.layers.observability = this.config.layers.observability || {};
-      this.config.verification = this.config.verification || {};
+      normalizedConfig.layers = normalizedConfig.layers || {};
+      normalizedConfig.layers.verification = normalizedConfig.layers.verification || {};
+      normalizedConfig.layers.pattern_memory = normalizedConfig.layers.pattern_memory || {};
+      normalizedConfig.layers.self_correction = normalizedConfig.layers.self_correction || {};
+      normalizedConfig.layers.prompt_policy = normalizedConfig.layers.prompt_policy || {};
+      normalizedConfig.layers.observability = normalizedConfig.layers.observability || {};
+      normalizedConfig.verification = normalizedConfig.verification || {};
       const defaultVerification = (this.defaults && this.defaults.verification) || {};
-      this.config.verification.protected_tools = ensureList(this.config.verification.protected_tools, defaultVerification.protected_tools || [], { requireNonEmpty: true });
-      this.config.verification.protected_paths = ensureList(this.config.verification.protected_paths, defaultVerification.protected_paths || [], { requireNonEmpty: true });
-      this.config.verification.blocked_shell_patterns = ensureList(this.config.verification.blocked_shell_patterns, defaultVerification.blocked_shell_patterns || [], { requireNonEmpty: true });
-      this.config.verification.allowed_domains = ensureList(this.config.verification.allowed_domains, defaultVerification.allowed_domains || []);
-      this.config.verification.blocked_domains = ensureList(this.config.verification.blocked_domains, defaultVerification.blocked_domains || []);
-      this.config.verification.require_review_for = ensureList(this.config.verification.require_review_for, defaultVerification.require_review_for || [], { requireNonEmpty: true });
-      if (this.config.verification.max_risk_score == null && defaultVerification.max_risk_score != null) this.config.verification.max_risk_score = defaultVerification.max_risk_score;
-      this.config.pattern_memory = this.config.pattern_memory || {};
-      this.config.self_correction = this.config.self_correction || {};
-      this.config.bounded_recovery = this.config.bounded_recovery || {};
-      this.config.prompt_policy = this.config.prompt_policy || {};
-      this.config.observability = this.config.observability || {};
-      this.config.bounded_recovery.enabled = !!this.config.bounded_recovery.enabled;
-      if (this.config.bounded_recovery.allow_auto_continue_after_failure == null) this.config.bounded_recovery.allow_auto_continue_after_failure = false;
-      if (!this.config.bounded_recovery.max_restore_resolution) this.config.bounded_recovery.max_restore_resolution = 'context_id';
-      if (this.config.bounded_recovery.inject_idle_recovery_policy == null) this.config.bounded_recovery.inject_idle_recovery_policy = false;
-      this.config.observability.log_level = String(this.config.observability.log_level || 'info').trim().toLowerCase() === 'debug' ? 'debug' : 'info';
-      if (this.config.observability.log_decisions == null) this.config.observability.log_decisions = true;
-      if (this.config.observability.log_rejections == null) this.config.observability.log_rejections = true;
-      if (this.config.observability.retain_history_days == null) this.config.observability.retain_history_days = 14;
-      if (this.config.observability.expose_debug_api == null) this.config.observability.expose_debug_api = true;
+      normalizedConfig.verification.protected_tools = ensureList(normalizedConfig.verification.protected_tools, defaultVerification.protected_tools || [], { requireNonEmpty: true });
+      normalizedConfig.verification.protected_paths = ensureList(normalizedConfig.verification.protected_paths, defaultVerification.protected_paths || [], { requireNonEmpty: true });
+      normalizedConfig.verification.blocked_shell_patterns = ensureList(normalizedConfig.verification.blocked_shell_patterns, defaultVerification.blocked_shell_patterns || [], { requireNonEmpty: true });
+      normalizedConfig.verification.allowed_domains = ensureList(normalizedConfig.verification.allowed_domains, defaultVerification.allowed_domains || []);
+      normalizedConfig.verification.blocked_domains = ensureList(normalizedConfig.verification.blocked_domains, defaultVerification.blocked_domains || []);
+      normalizedConfig.verification.require_review_for = ensureList(normalizedConfig.verification.require_review_for, defaultVerification.require_review_for || [], { requireNonEmpty: true });
+      if (normalizedConfig.verification.max_risk_score == null && defaultVerification.max_risk_score != null) normalizedConfig.verification.max_risk_score = defaultVerification.max_risk_score;
+      normalizedConfig.pattern_memory = normalizedConfig.pattern_memory || {};
+      normalizedConfig.self_correction = normalizedConfig.self_correction || {};
+      normalizedConfig.bounded_recovery = normalizedConfig.bounded_recovery || {};
+      normalizedConfig.prompt_policy = normalizedConfig.prompt_policy || {};
+      normalizedConfig.observability = normalizedConfig.observability || {};
+      normalizedConfig.bounded_recovery.enabled = !!normalizedConfig.bounded_recovery.enabled;
+      if (normalizedConfig.bounded_recovery.allow_auto_continue_after_failure == null) normalizedConfig.bounded_recovery.allow_auto_continue_after_failure = false;
+      if (!normalizedConfig.bounded_recovery.max_restore_resolution) normalizedConfig.bounded_recovery.max_restore_resolution = 'context_id';
+      if (normalizedConfig.bounded_recovery.inject_idle_recovery_policy == null) normalizedConfig.bounded_recovery.inject_idle_recovery_policy = false;
+      normalizedConfig.observability.log_level = String(normalizedConfig.observability.log_level || 'info').trim().toLowerCase() === 'debug' ? 'debug' : 'info';
+      if (normalizedConfig.observability.log_decisions == null) normalizedConfig.observability.log_decisions = true;
+      if (normalizedConfig.observability.log_rejections == null) normalizedConfig.observability.log_rejections = true;
+      if (normalizedConfig.observability.retain_history_days == null) normalizedConfig.observability.retain_history_days = 14;
+      if (normalizedConfig.observability.expose_debug_api == null) normalizedConfig.observability.expose_debug_api = true;
       if ((explicitSelfCorrectionMode == null || explicitSelfCorrectionMode === '') && selected === 'full') {
-        this.config.layers.self_correction.mode = 'auto';
+        normalizedConfig.layers.self_correction.mode = 'auto';
       }
+      this.normalizeInPlace(target, normalizedConfig);
     },
     applyProfileDefaults() {
+      const cfg = this.activeConfig();
+      if (!cfg) return;
+      cfg.plugin = cfg.plugin || {};
+      cfg.surfaces = cfg.surfaces || {};
       const core = ['cognition_adapter', 'event_bus', 'cognition_orchestrator', 'verification_guardian'];
       const standard = core.concat(['pattern_detector', 'pattern_persistence_core']);
       const full = standard.concat(['context_manager', 'self_correction_trigger']);
-      const selected = this.config.plugin.profile;
+      const selected = cfg.plugin.profile;
       if (selected === 'custom') return;
       const active = selected === 'full' ? full : selected === 'standard' ? standard : core;
-      this.surfaceOrder.forEach(s => this.config.surfaces[s] = active.includes(s));
-      this.config.layers = this.config.layers || {};
-      this.config.layers.self_correction = this.config.layers.self_correction || {};
-      this.config.layers.self_correction.mode = selected === 'full' ? 'auto' : 'advisory';
+      this.surfaceOrder.forEach(s => cfg.surfaces[s] = active.includes(s));
+      cfg.layers = cfg.layers || {};
+      cfg.layers.self_correction = cfg.layers.self_correction || {};
+      cfg.layers.self_correction.mode = selected === 'full' ? 'auto' : 'advisory';
     },
     surfaceLabel(surface) {
       return (this.surfaceMeta[surface] && this.surfaceMeta[surface].label) || surface;
@@ -177,50 +223,54 @@
       return (this.surfaceMeta[surface] && this.surfaceMeta[surface].detail) || '';
     },
     protectionLevelHelp() {
+      const cfg = this.activeConfig() || {};
       const mode =
-        this.config &&
-        this.config.layers &&
-        this.config.layers.verification &&
-        this.config.layers.verification.mode
-          ? this.config.layers.verification.mode
+        cfg &&
+        cfg.layers &&
+        cfg.layers.verification &&
+        cfg.layers.verification.mode
+          ? cfg.layers.verification.mode
           : 'enforce';
       if (mode === 'monitor') return 'Monitor keeps CLF running but stops blocking tool calls. Risky calls are allowed with a warning, which is the safest temporary relief path.';
       if (mode === 'off') return 'Off bypasses verification entirely. Use it only when you truly want zero CLF protection checks on tool calls.';
       return 'Enforce actively blocks risky tool calls. This is the strict default when you want the plugin to guard execution.';
     },
     profileHelp() {
-      const selected = (this.config && this.config.plugin && this.config.plugin.profile) || 'full';
+      const cfg = this.activeConfig() || {};
+      const selected = (cfg && cfg.plugin && cfg.plugin.profile) || 'full';
       if (selected === 'standard') return 'Standard adds pattern detection and persistence on top of the core runtime.';
       if (selected === 'full') return 'Full enables context recovery and automatic self-correction in addition to standard capabilities. Bounded Recovery can narrow that behavior for long-running research runs without changing the certified default.';
       if (selected === 'custom') return 'Custom preserves your manual surface overrides instead of forcing a predefined CLF profile.';
       return 'Core keeps orchestration, verification, events, and the adapter active without the heavier recovery surfaces.';
     },
     boundedRecoveryHelp() {
+      const cfg = this.activeConfig() || {};
       const enabled =
-        this.config &&
-        this.config.bounded_recovery &&
-        this.config.bounded_recovery.enabled;
+        cfg &&
+        cfg.bounded_recovery &&
+        cfg.bounded_recovery.enabled;
       if (!enabled) {
         return 'Disabled keeps the certified Full-profile behavior unchanged. Enable this only when you want long-running tasks to stop inheriting broad recovery behavior.';
       }
       const restore =
-        this.config &&
-        this.config.bounded_recovery &&
-        this.config.bounded_recovery.max_restore_resolution
-          ? this.config.bounded_recovery.max_restore_resolution
+        cfg &&
+        cfg.bounded_recovery &&
+        cfg.bounded_recovery.max_restore_resolution
+          ? cfg.bounded_recovery.max_restore_resolution
           : 'context_id';
       const autoContinue =
-        this.config &&
-        this.config.bounded_recovery &&
-        this.config.bounded_recovery.allow_auto_continue_after_failure;
+        cfg &&
+        cfg.bounded_recovery &&
+        cfg.bounded_recovery.allow_auto_continue_after_failure;
       return `Active: recovery restore is capped at ${restore}, auto-continue after failures is ${autoContinue ? 'allowed' : 'blocked'}, and this run is treated as a non-certified behavior override.`;
     },
     observabilityHelp() {
+      const cfg = this.activeConfig() || {};
       const observability =
-        this.config &&
-        this.config.observability &&
-        typeof this.config.observability === 'object'
-          ? this.config.observability
+        cfg &&
+        cfg.observability &&
+        typeof cfg.observability === 'object'
+          ? cfg.observability
           : {};
       const logDecisions = observability.log_decisions !== false;
       const logRejections = observability.log_rejections !== false;
@@ -231,18 +281,24 @@
       return 'INFO keeps routine CLF bookkeeping hidden and only shows risky verification outcomes that warn or block.';
     },
     markSurfaceOverride(surface) {
-      this.config.plugin = this.config.plugin || {};
-      this.config.plugin.profile = 'custom';
-      this.config.surfaces[surface] = !!this.config.surfaces[surface];
+      const cfg = this.activeConfig();
+      if (!cfg) return;
+      cfg.plugin = cfg.plugin || {};
+      cfg.surfaces = cfg.surfaces || {};
+      cfg.plugin.profile = 'custom';
+      cfg.surfaces[surface] = !!cfg.surfaces[surface];
     },
     ensureVerificationConfig() {
-      this.config = this.config || {};
-      this.config.verification = this.config.verification || {};
+      const cfg = this.activeConfig();
+      if (!cfg) return null;
+      cfg.verification = cfg.verification || {};
+      return cfg;
     },
     verificationItems(key) {
-      this.ensureVerificationConfig();
-      if (!Array.isArray(this.config.verification[key])) this.config.verification[key] = [];
-      return this.config.verification[key];
+      const cfg = this.ensureVerificationConfig();
+      if (!cfg) return [];
+      if (!Array.isArray(cfg.verification[key])) cfg.verification[key] = [];
+      return cfg.verification[key];
     },
     addVerificationItem(key, seed = '') {
       this.verificationItems(key).push(seed);
@@ -260,10 +316,10 @@
     parseList(text) { return String(text || '').split('\n').map(s => s.trim()).filter(Boolean); },
     formatList(items) { return (items || []).join('\n'); }
   }"
-  x-init="initDefaults()"
-  class="space-y-6 text-sm"
 >
-  <div class="rounded border border-zinc-700 p-5 space-y-4">
+  <template x-if="config">
+    <div x-init="initDefaults()" class="space-y-6 text-sm">
+      <div class="rounded border border-zinc-700 p-5 space-y-4">
     <div class="space-y-1">
       <div class="font-semibold text-base">Cognition Layers v2 Runtime</div>
       <p class="text-zinc-300">Agent Zero hooks stay thin; the plugin runtime does the work. These settings keep the profile, protection level, and low-level overrides in one predictable place.</p>
@@ -521,4 +577,6 @@
     </div>
     <p class="text-zinc-400">Changing required surfaces can degrade the effective profile to custom. The status API reports that honestly instead of pretending everything is conformant.</p>
   </div>
+    </div>
+  </template>
 </div>
