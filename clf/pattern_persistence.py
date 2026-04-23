@@ -133,9 +133,7 @@ class PatternPersistenceCore:
             scored.append((score, pattern))
         scored.sort(key=lambda item: item[0], reverse=True)
         selected = [pattern for score, pattern in scored[: max(1, min(int(limit or 5), 50))] if score > 0.0]
-        self._mark_prompt_selection(selected, cooldown_context)
-        refreshed = [self.getPatternById(str(pattern.get("id", ""))) for pattern in selected]
-        return [pattern for pattern in refreshed if pattern]
+        return self._mark_prompt_selection(selected, cooldown_context)
 
     def confirm(self, pattern_id: str) -> dict[str, Any] | None:
         return self.transitionPattern(pattern_id, "verified", reason="manual_confirmation")
@@ -154,11 +152,16 @@ class PatternPersistenceCore:
         counts = state.pattern_stats(scope_label=scope_label)
         return {"patterns": patterns, "scope": scope_label, "counts": counts}
 
-    def _mark_prompt_selection(self, patterns: list[dict[str, Any]], context_id: str) -> None:
+    def _mark_prompt_selection(self, patterns: list[dict[str, Any]], context_id: str) -> list[dict[str, Any]]:
         if not patterns:
-            return
+            return []
         keep_contexts = int(self.settings["cooldown_sessions"])
+        selected_ids: list[str] = []
+        updates: dict[str, dict[str, Any]] = {}
         for pattern in patterns:
+            pattern_id = str(pattern.get("id", "")).strip()
+            if not pattern_id:
+                continue
             metadata = pattern.get("metadata", {}) if isinstance(pattern.get("metadata"), dict) else {}
             context_ids = [str(item) for item in metadata.get("cooldown_context_ids", []) if str(item)]
             if context_id:
@@ -169,8 +172,33 @@ class PatternPersistenceCore:
                 metadata["cooldown_context_ids"] = context_ids[-keep_contexts:]
             else:
                 metadata["cooldown_context_ids"] = []
-            updated = {**pattern, "status": "active", "metadata": metadata}
-            self.savePattern(updated, storage_layer=str(pattern.get("storageLayer") or self.settings["default_storage_layer"]))
+            selected_ids.append(pattern_id)
+            updates[pattern_id] = {
+                **pattern,
+                "status": "active",
+                "metadata": metadata,
+                "storageLayer": str(pattern.get("storageLayer") or self.settings["default_storage_layer"]),
+            }
+        if not updates:
+            return []
+        all_patterns = state.load_patterns()
+        persisted: list[dict[str, Any]] = []
+        refreshed: dict[str, dict[str, Any]] = {}
+        for existing in all_patterns:
+            pattern_id = str(existing.get("id", "")).strip()
+            if pattern_id in updates:
+                updated = state.normalize_pattern({**existing, **updates[pattern_id]})
+                persisted.append(updated)
+                refreshed[pattern_id] = updated
+            else:
+                persisted.append(existing)
+        for pattern_id in selected_ids:
+            if pattern_id not in refreshed and pattern_id in updates:
+                updated = state.normalize_pattern(updates[pattern_id])
+                persisted.append(updated)
+                refreshed[pattern_id] = updated
+        state.save_patterns(persisted, max_patterns=int(self.settings["max_patterns"]), similarity_threshold=None)
+        return [refreshed[pattern_id] for pattern_id in selected_ids if pattern_id in refreshed]
 
     def _words(self, text: str) -> list[str]:
         stop = {"the", "and", "for", "with", "that", "this", "from", "tool", "agent", "error", "failed"}

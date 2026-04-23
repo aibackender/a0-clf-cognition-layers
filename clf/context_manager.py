@@ -17,15 +17,16 @@ class ContextManager:
 
     def checkpoint(self, context: AgentContext) -> dict[str, Any]:
         runtime = SelfCorrectionTrigger(context.config or self.config).runtime_state(context.agent)
-        snapshot = state.snapshot()
+        rollup = state.load_rollup()
+        patterns = state.load_patterns(limit=10)
         record = CheckpointRecord(
             id=new_id("checkpoint"),
             context_id=context.context_id,
             scope=context.scope,
             profile_status=context.profile_status.to_dict() if context.profile_status else {},
-            recent_verification_results=snapshot.get("recent_decisions", [])[-10:],
-            recent_patterns=snapshot.get("patterns", [])[:10],
-            recent_correction_decisions=snapshot.get("recent_corrections", [])[-10:],
+            recent_verification_results=rollup.get("recent_decisions", [])[-10:],
+            recent_patterns=patterns[:10],
+            recent_correction_decisions=rollup.get("recent_corrections", [])[-10:],
             correction_runtime_state=runtime,
             prompt_budget={
                 "max_chars": int(get_in(context.config, "prompt_policy.max_injected_chars", 900) or 900),

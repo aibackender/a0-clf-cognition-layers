@@ -510,15 +510,16 @@ def record_correction(agent: Any | None, event: dict[str, Any], config: dict[str
 
 def status_summary(agent: Any | None = None, config: dict[str, Any] | None = None) -> dict[str, Any]:
     cfg = config or {}
-    snap = state.snapshot()
+    rollup = state.load_rollup()
+    patterns = state.load_patterns()
     base = plugin_status(agent=agent, explicit=cfg if cfg else None)
     profile = base.get("profile", {}) if isinstance(base.get("profile", {}), dict) else {}
     bounded = bounded_recovery_settings(cfg)
     effective_bounded = effective_bounded_recovery_settings(cfg)
-    base["counters"] = snap.get("counters", {})
-    base["recent_decisions"] = snap.get("recent_decisions", [])[-20:]
-    base["recent_corrections"] = snap.get("recent_corrections", [])[-20:]
-    base["pattern_count"] = len(snap.get("patterns", []))
+    base["counters"] = rollup.get("counters", {})
+    base["recent_decisions"] = rollup.get("recent_decisions", [])[-20:]
+    base["recent_corrections"] = rollup.get("recent_corrections", [])[-20:]
+    base["pattern_count"] = len(patterns)
     base["verification_cache"] = state.verification_cache_stats(cfg)
     base["unsupported_behaviors"] = profile.get("unsupported_behaviors", [])
     base["checkpoint_summary"] = ContextManager(cfg).summary(agent)
@@ -541,7 +542,7 @@ def status_summary(agent: Any | None = None, config: dict[str, Any] | None = Non
             "usage_count": p.get("usage_count"),
             "updated_at": p.get("updated_at"),
         }
-        for p in snap.get("patterns", [])[:10]
+        for p in patterns[:10]
     ]
     base["claim_readiness"] = claim_readiness(cfg, profile, {"errors": []}, base["verification_cache"])
     base["available_claim_paths"] = base["claim_readiness"].get("available_claim_paths", {})

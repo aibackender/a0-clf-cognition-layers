@@ -130,6 +130,12 @@ def default_state() -> dict[str, Any]:
     }
 
 
+def default_rollup_state() -> dict[str, Any]:
+    rollup = default_state()
+    rollup.pop("patterns", None)
+    return rollup
+
+
 def default_verification_cache() -> dict[str, Any]:
     return {
         "version": 1,
@@ -163,9 +169,7 @@ def ensure_storage() -> None:
         if not PATTERNS_FILE.exists():
             _write_json(PATTERNS_FILE, [])
         if not TELEMETRY_ROLLUP_FILE.exists():
-            rollup = default_state()
-            rollup.pop("patterns", None)
-            _write_json(TELEMETRY_ROLLUP_FILE, rollup)
+            _write_json(TELEMETRY_ROLLUP_FILE, default_rollup_state())
         if not PROFILE_STATUS_FILE.exists():
             _write_json(PROFILE_STATUS_FILE, {})
         if not CONFIG_FILE.exists():
@@ -489,22 +493,139 @@ def _drop_invalid_documents(schema_name: str, items: list[dict[str, Any]]) -> li
     return valid
 
 
+def _normalize_rollup_state(data: Any) -> dict[str, Any]:
+    snapshot = deepcopy(data if isinstance(data, dict) else default_rollup_state())
+    snapshot.setdefault("version", 3)
+    snapshot.setdefault("updated_at", utc_now_iso())
+    snapshot["recent_decisions"] = [item for item in snapshot.get("recent_decisions", []) if isinstance(item, dict)]
+    snapshot["recent_corrections"] = [item for item in snapshot.get("recent_corrections", []) if isinstance(item, dict)]
+    defaults = default_state()["counters"]
+    counters = snapshot.get("counters", {}) if isinstance(snapshot.get("counters", {}), dict) else {}
+    snapshot["counters"] = {key: int(counters.get(key, value) or value) for key, value in defaults.items()}
+    snapshot.pop("patterns", None)
+    return snapshot
+
+
+def _load_rollup_unlocked() -> dict[str, Any]:
+    data = _normalize_rollup_state(_read_json(TELEMETRY_ROLLUP_FILE, default_rollup_state()))
+    if not data["recent_decisions"] and not data["recent_corrections"] and not any(int(value or 0) for value in data["counters"].values()):
+        legacy = _normalize_rollup_state(_read_json(STATE_FILE, default_rollup_state()))
+        if legacy["recent_decisions"] or legacy["recent_corrections"] or any(int(value or 0) for value in legacy["counters"].values()):
+            data = legacy
+    return data
+
+
+def _save_rollup_unlocked(snapshot: dict[str, Any]) -> dict[str, Any]:
+    rollup = _normalize_rollup_state(snapshot)
+    rollup["updated_at"] = utc_now_iso()
+    _write_json(TELEMETRY_ROLLUP_FILE, rollup)
+    _write_json(STATE_FILE, rollup)
+    return rollup
+
+
+def load_rollup() -> dict[str, Any]:
+    with _STATE_LOCK:
+        ensure_storage()
+        return _load_rollup_unlocked()
+
+
+def save_rollup(snapshot: dict[str, Any]) -> dict[str, Any]:
+    with _STATE_LOCK:
+        ensure_storage()
+        return _save_rollup_unlocked(snapshot)
+
+
+def _compact_patterns_exact(patterns: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    compacted: list[dict[str, Any]] = []
+    id_index: dict[str, int] = {}
+    identity_index: dict[tuple[str, str, str, str, str, str], int] = {}
+    for pattern in patterns:
+        incoming = normalize_pattern(pattern)
+        pattern_id = str(incoming.get("id", ""))
+        identity = _pattern_identity(incoming)
+        index = id_index.get(pattern_id) if pattern_id else None
+        if index is None:
+            index = identity_index.get(identity)
+        if index is not None:
+            compacted[index] = _merge_pattern(compacted[index], incoming)
+            merged = compacted[index]
+            merged_id = str(merged.get("id", ""))
+            if merged_id:
+                id_index[merged_id] = index
+            identity_index[_pattern_identity(merged)] = index
+            continue
+        index = len(compacted)
+        compacted.append(incoming)
+        if pattern_id:
+            id_index[pattern_id] = index
+        identity_index[identity] = index
+    compacted.sort(key=_pattern_sort_key, reverse=True)
+    return compacted
+
+
+def _load_patterns_unlocked(*, limit: int | None = None) -> list[dict[str, Any]]:
+    raw_patterns = _read_json(PATTERNS_FILE, [])
+    if not isinstance(raw_patterns, list):
+        raw_patterns = []
+    normalized_patterns = [normalize_pattern(pattern) for pattern in raw_patterns if isinstance(pattern, dict)]
+    normalized_patterns = _compact_patterns_exact(normalized_patterns)
+    normalized_patterns = _drop_invalid_documents("patterns", normalized_patterns)
+    if limit is not None:
+        return normalized_patterns[: max(0, int(limit or 0))]
+    return normalized_patterns
+
+
+def load_patterns(*, limit: int | None = None) -> list[dict[str, Any]]:
+    with _STATE_LOCK:
+        ensure_storage()
+        return _load_patterns_unlocked(limit=limit)
+
+
+def _save_patterns_unlocked(
+    patterns: list[dict[str, Any]],
+    *,
+    max_patterns: int | None = None,
+    similarity_threshold: float | None = None,
+    update_rollup: bool = True,
+) -> list[dict[str, Any]]:
+    normalized = [normalize_pattern(pattern) for pattern in patterns if isinstance(pattern, dict)]
+    if similarity_threshold is None:
+        normalized = _compact_patterns_exact(normalized)
+    else:
+        normalized = _compact_patterns(normalized, similarity_threshold=similarity_threshold)
+    normalized = _drop_invalid_documents("patterns", normalized)
+    if max_patterns is not None:
+        normalized = normalized[: max(1, int(max_patterns or 1))]
+    _write_json(PATTERNS_FILE, normalized)
+    if update_rollup:
+        rollup = _load_rollup_unlocked()
+        rollup.setdefault("counters", {})["patterns_total"] = len(normalized)
+        _save_rollup_unlocked(rollup)
+    return normalized
+
+
+def save_patterns(
+    patterns: list[dict[str, Any]],
+    *,
+    max_patterns: int | None = None,
+    similarity_threshold: float | None = None,
+) -> list[dict[str, Any]]:
+    with _STATE_LOCK:
+        ensure_storage()
+        return _save_patterns_unlocked(
+            patterns,
+            max_patterns=max_patterns,
+            similarity_threshold=similarity_threshold,
+            update_rollup=True,
+        )
+
+
 def load_state() -> dict[str, Any]:
     with _STATE_LOCK:
         ensure_storage()
-        data = _read_json(STATE_FILE, default_state())
-        if not isinstance(data, dict):
-            data = default_state()
-        raw_patterns = _read_json(PATTERNS_FILE, data.get("patterns", []))
-        normalized_patterns = [normalize_pattern(pattern) for pattern in raw_patterns if isinstance(pattern, dict)]
-        normalized_patterns = _compact_patterns(normalized_patterns)
-        normalized_patterns = _drop_invalid_documents("patterns", normalized_patterns)
-        data.setdefault("recent_decisions", [])
-        data.setdefault("recent_corrections", [])
-        data.setdefault("counters", default_state()["counters"])
-        data["patterns"] = normalized_patterns
-        if raw_patterns != normalized_patterns:
-            _write_json(PATTERNS_FILE, normalized_patterns)
+        data = _load_rollup_unlocked()
+        data["patterns"] = _load_patterns_unlocked()
+        data.setdefault("counters", default_state()["counters"])["patterns_total"] = len(data["patterns"])
         return data
 
 
@@ -512,17 +633,15 @@ def save_state(state: dict[str, Any]) -> dict[str, Any]:
     with _STATE_LOCK:
         ensure_storage()
         snapshot = deepcopy(state if isinstance(state, dict) else default_state())
-        snapshot["updated_at"] = utc_now_iso()
-        patterns = [normalize_pattern(pattern) for pattern in snapshot.get("patterns", []) if isinstance(pattern, dict)]
-        patterns = _compact_patterns(patterns)
-        patterns = _drop_invalid_documents("patterns", patterns)
+        patterns = _save_patterns_unlocked(
+            snapshot.get("patterns", []),
+            max_patterns=None,
+            similarity_threshold=None,
+            update_rollup=False,
+        )
         snapshot.setdefault("counters", {})["patterns_total"] = len(patterns)
         snapshot["patterns"] = patterns
-        _write_json(PATTERNS_FILE, patterns)
-        rollup = deepcopy(snapshot)
-        rollup.pop("patterns", None)
-        _write_json(TELEMETRY_ROLLUP_FILE, rollup)
-        _write_json(STATE_FILE, snapshot)
+        _save_rollup_unlocked(snapshot)
         return snapshot
 
 
@@ -562,28 +681,28 @@ def cleanup_state(state: dict[str, Any], *, retain_days: int = 14, max_patterns:
 def add_decision(record: dict[str, Any], *, retain_limit: int = 200) -> dict[str, Any]:
     item = deepcopy(record)
     item.setdefault("timestamp", utc_now_iso())
-    snapshot = load_state()
+    snapshot = load_rollup()
     snapshot["recent_decisions"] = _append_bounded(snapshot.get("recent_decisions", []), item, retain_limit)
     counters = snapshot.setdefault("counters", {})
     counters["decisions_total"] = int(counters.get("decisions_total", 0) or 0) + 1
     if str(item.get("action", "")).lower() == "block":
         counters["rejections_total"] = int(counters.get("rejections_total", 0) or 0) + 1
-    save_state(snapshot)
+    save_rollup(snapshot)
     return item
 
 
 def add_correction(record: dict[str, Any], *, retain_limit: int = 150) -> dict[str, Any]:
     item = deepcopy(record)
     item.setdefault("timestamp", utc_now_iso())
-    snapshot = load_state()
+    snapshot = load_rollup()
     snapshot["recent_corrections"] = _append_bounded(snapshot.get("recent_corrections", []), item, retain_limit)
     counters = snapshot.setdefault("counters", {})
     counters["corrections_total"] = int(counters.get("corrections_total", 0) or 0) + 1
-    save_state(snapshot)
+    save_rollup(snapshot)
     return item
 
 
-def _pattern_identity(record: dict[str, Any]) -> tuple[str, str, str, str, str]:
+def _pattern_identity(record: dict[str, Any]) -> tuple[str, str, str, str, str, str]:
     scope = record.get("scope", {}) or {}
     metadata = record.get("metadata", {}) if isinstance(record.get("metadata"), dict) else {}
     context_id = str(metadata.get("context_id") or scope.get("context_id") or "")
@@ -676,8 +795,7 @@ def _merge_pattern(existing: dict[str, Any], incoming: dict[str, Any]) -> dict[s
 
 
 def add_pattern(record: dict[str, Any], *, max_patterns: int = 500, similarity_threshold: float = 0.92) -> dict[str, Any]:
-    snapshot = load_state()
-    patterns = [normalize_pattern(pattern) for pattern in snapshot.get("patterns", []) if isinstance(pattern, dict)]
+    patterns = load_patterns()
     incoming = normalize_pattern(record)
     result = incoming
     for index, existing in enumerate(patterns):
@@ -691,9 +809,12 @@ def add_pattern(record: dict[str, Any], *, max_patterns: int = 500, similarity_t
     else:
         patterns.append(incoming)
     patterns = _compact_patterns(patterns, similarity_threshold=max(0.97, float(similarity_threshold or 0.92)))
-    snapshot["patterns"] = patterns[:max(1, max_patterns)]
-    snapshot.setdefault("counters", {})["patterns_total"] = len(snapshot["patterns"])
-    save_state(snapshot)
+    saved = save_patterns(patterns[: max(1, max_patterns)], similarity_threshold=None)
+    for item in saved:
+        if str(item.get("id", "")) == str(result.get("id", "")):
+            return item
+        if _pattern_identity(item) == _pattern_identity(result):
+            return item
     return result
 
 
@@ -705,7 +826,7 @@ def get_patterns(
     storage_layer: str | None = None,
     context_id: str | None = None,
 ) -> list[dict[str, Any]]:
-    patterns = [normalize_pattern(pattern) for pattern in load_state().get("patterns", []) if isinstance(pattern, dict)]
+    patterns = load_patterns()
     if pattern_type:
         normalized_type = _normalize_pattern_type(pattern_type)
         patterns = [pattern for pattern in patterns if str(pattern.get("type", "")) == normalized_type]
@@ -738,11 +859,10 @@ def get_pattern_by_id(pattern_id: str) -> dict[str, Any] | None:
 
 
 def transition_pattern(pattern_id: str, status: str, *, reason: str | None = None) -> dict[str, Any] | None:
-    snapshot = load_state()
     normalized_status = _normalize_status(status)
     updated: dict[str, Any] | None = None
     patterns: list[dict[str, Any]] = []
-    for pattern in snapshot.get("patterns", []):
+    for pattern in load_patterns():
         item = normalize_pattern(pattern)
         if str(item.get("id", "")) == str(pattern_id):
             item["status"] = normalized_status
@@ -757,24 +877,20 @@ def transition_pattern(pattern_id: str, status: str, *, reason: str | None = Non
         patterns.append(item)
     if updated is None:
         return None
-    snapshot["patterns"] = patterns
-    save_state(snapshot)
+    save_patterns(patterns, similarity_threshold=None)
     return updated
 
 
 def delete_pattern(pattern_id: str) -> dict[str, Any]:
-    snapshot = load_state()
-    before = len(snapshot.get("patterns", []))
-    snapshot["patterns"] = [normalize_pattern(pattern) for pattern in snapshot.get("patterns", []) if str(pattern.get("id", "")) != str(pattern_id)]
-    save_state(snapshot)
-    return {"ok": True, "deleted": len(snapshot["patterns"]) != before, "pattern_id": pattern_id}
+    patterns = load_patterns()
+    before = len(patterns)
+    remaining = [normalize_pattern(pattern) for pattern in patterns if str(pattern.get("id", "")) != str(pattern_id)]
+    save_patterns(remaining, similarity_threshold=None)
+    return {"ok": True, "deleted": len(remaining) != before, "pattern_id": pattern_id}
 
 
 def clear_patterns() -> dict[str, Any]:
-    snapshot = load_state()
-    snapshot["patterns"] = []
-    snapshot.setdefault("counters", {})["patterns_total"] = 0
-    save_state(snapshot)
+    save_patterns([], similarity_threshold=None)
     return {"ok": True, "patterns_cleared": True}
 
 
@@ -831,9 +947,9 @@ def save_checkpoint(checkpoint: dict[str, Any], *, retain_limit: int = 20) -> di
     items = _drop_invalid_documents("checkpoints", items)
     data["items"] = items[-max(1, retain_limit):]
     _write_json(CHECKPOINTS_FILE, data)
-    snapshot = load_state()
+    snapshot = load_rollup()
     snapshot.setdefault("counters", {})["checkpoints_total"] = int(snapshot.setdefault("counters", {}).get("checkpoints_total", 0) or 0) + 1
-    save_state(snapshot)
+    save_rollup(snapshot)
     return normalized
 
 
