@@ -71,7 +71,7 @@ surfaces:
 - **Standard Surfaces**: Core plus `PatternDetector` and `PatternPersistenceCore`
 - **Full Surfaces**: Standard plus `ContextManager` and `SelfCorrectionTrigger`
 - **Profile Resolution**: Explicit profiles (Core, Standard, Full) and custom user-controlled surface toggles
-- **Runtime State**: Persistent state stored in `usr/plugins/cognition_layers/state/`
+- **Runtime State**: Persistent state stored in `state/`
 - **Verification Guardian**: Separates shell analysis, file destination analysis, content payload analysis, and credential likelihood analysis
 
 ---
@@ -90,12 +90,12 @@ surfaces:
 
 ## APIs
 
-- `GET/POST /api/plugins/cognition_layers/get_status`
-- `GET/POST /api/plugins/cognition_layers/get_profile`
-- `GET/POST /api/plugins/cognition_layers/get_defaults`
-- `GET/POST /api/plugins/cognition_layers/get_events`
-- `GET/POST /api/plugins/cognition_layers/get_patterns`
-- `POST /api/plugins/cognition_layers/clear_patterns`
+- `GET/POST api/get_status`
+- `GET/POST api/get_profile`
+- `GET/POST api/get_defaults`
+- `GET/POST api/get_events`
+- `GET/POST api/get_patterns`
+- `POST api/clear_patterns`
 
 ---
 
@@ -104,7 +104,7 @@ surfaces:
 Plugin-owned state is stored inside the plugin folder so learned patterns and telemetry travel with the plugin:
 
 ```
-usr/plugins/cognition_layers/state/
+state/
 ├── config.json
 ├── profile_status.json
 ├── patterns.json

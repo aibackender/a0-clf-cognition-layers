@@ -47,6 +47,13 @@
         max_restore_resolution: 'context_id',
         inject_idle_recovery_policy: false,
       },
+      observability: {
+        log_level: 'info',
+        log_decisions: true,
+        log_rejections: true,
+        retain_history_days: 14,
+        expose_debug_api: true,
+      },
     },
     surfaceOrder: ['cognition_adapter', 'event_bus', 'cognition_orchestrator', 'verification_guardian', 'pattern_detector', 'pattern_persistence_core', 'context_manager', 'self_correction_trigger'],
     surfaceMeta: {
@@ -142,6 +149,11 @@
       if (this.config.bounded_recovery.allow_auto_continue_after_failure == null) this.config.bounded_recovery.allow_auto_continue_after_failure = false;
       if (!this.config.bounded_recovery.max_restore_resolution) this.config.bounded_recovery.max_restore_resolution = 'context_id';
       if (this.config.bounded_recovery.inject_idle_recovery_policy == null) this.config.bounded_recovery.inject_idle_recovery_policy = false;
+      this.config.observability.log_level = String(this.config.observability.log_level || 'info').trim().toLowerCase() === 'debug' ? 'debug' : 'info';
+      if (this.config.observability.log_decisions == null) this.config.observability.log_decisions = true;
+      if (this.config.observability.log_rejections == null) this.config.observability.log_rejections = true;
+      if (this.config.observability.retain_history_days == null) this.config.observability.retain_history_days = 14;
+      if (this.config.observability.expose_debug_api == null) this.config.observability.expose_debug_api = true;
       if ((explicitSelfCorrectionMode == null || explicitSelfCorrectionMode === '') && selected === 'full') {
         this.config.layers.self_correction.mode = 'auto';
       }
@@ -202,6 +214,21 @@
         this.config.bounded_recovery &&
         this.config.bounded_recovery.allow_auto_continue_after_failure;
       return `Active: recovery restore is capped at ${restore}, auto-continue after failures is ${autoContinue ? 'allowed' : 'blocked'}, and this run is treated as a non-certified behavior override.`;
+    },
+    observabilityHelp() {
+      const observability =
+        this.config &&
+        this.config.observability &&
+        typeof this.config.observability === 'object'
+          ? this.config.observability
+          : {};
+      const logDecisions = observability.log_decisions !== false;
+      const logRejections = observability.log_rejections !== false;
+      const logLevel = String(observability.log_level || 'info').toLowerCase() === 'debug' ? 'debug' : 'info';
+      if (!logDecisions) return 'CLF runtime process steps are fully hidden. Protection behavior still runs; only the user-facing runtime log blocks are suppressed.';
+      if (!logRejections) return 'Routine runtime blocks follow the selected level, but warn/block verification steps stay hidden too because rejection logging is disabled.';
+      if (logLevel === 'debug') return 'DEBUG restores the full CLF runtime narration, including routine verification allows, pattern memory, recovery, and checkpoint bookkeeping.';
+      return 'INFO keeps routine CLF bookkeeping hidden and only shows risky verification outcomes that warn or block.';
     },
     markSurfaceOverride(surface) {
       this.config.plugin = this.config.plugin || {};
@@ -445,6 +472,35 @@
         </label>
       </div>
     </div>
+  </div>
+
+  <div class="rounded border border-zinc-700 p-5 space-y-4">
+    <div class="space-y-1">
+      <div class="font-semibold">Observability</div>
+      <p class="text-zinc-300">Control how much CLF runtime detail is shown in the conversation. This changes only the user-facing CLF process steps, not the underlying protection or recovery behavior.</p>
+    </div>
+    <div class="grid gap-4 md:grid-cols-2">
+      <label class="block">
+        <div>Logging level</div>
+        <select class="w-full mt-1 bg-zinc-900 text-zinc-100 border border-zinc-700 rounded p-2" x-model="config.observability.log_level">
+          <option value="info">INFO</option>
+          <option value="debug">DEBUG</option>
+        </select>
+      </label>
+      <label class="flex items-center gap-2 rounded border border-zinc-800 bg-zinc-950/40 px-3 py-3">
+        <input type="checkbox" x-model="config.observability.log_decisions" />
+        <span>Show CLF runtime steps</span>
+      </label>
+      <label class="flex items-center gap-2 rounded border border-zinc-800 bg-zinc-950/40 px-3 py-3">
+        <input type="checkbox" x-model="config.observability.log_rejections" />
+        <span>Show warn/block runtime steps</span>
+      </label>
+      <label class="flex items-center gap-2 rounded border border-zinc-800 bg-zinc-950/40 px-3 py-3">
+        <input type="checkbox" x-model="config.observability.expose_debug_api" />
+        <span>Expose debug API</span>
+      </label>
+    </div>
+    <p class="rounded border border-zinc-800 bg-zinc-950/40 px-3 py-2 text-zinc-300" x-text="observabilityHelp()"></p>
   </div>
 
   <div class="rounded border border-zinc-700 p-5 space-y-4">

@@ -13,6 +13,8 @@ _ORCHESTRATOR_DEFAULTS={"default_timeout_ms":1000,"max_retries":2,"retry_backoff
 _PROFILE_LAYER_MODE_PRESETS={"full":{"self_correction":"auto"}}
 _BOUNDED_RECOVERY_DEFAULTS={"enabled":False,"allow_auto_continue_after_failure":False,"max_restore_resolution":"context_id","inject_idle_recovery_policy":False}
 _RESTORE_RESOLUTIONS=("context_id","scope_label","scope_project","latest_compatible")
+_OBSERVABILITY_LOG_LEVELS=("info","debug")
+_OBSERVABILITY_DEFAULTS={"log_level":"info","log_decisions":True,"log_rejections":True,"retain_history_days":14,"expose_debug_api":True}
 
 def load_default_config()->dict[str,Any]:
     if not DEFAULT_CONFIG_PATH.exists(): return {}
@@ -88,6 +90,10 @@ def _migrate_legacy_profile(runtime: dict[str, Any]) -> dict[str, Any]:
         migrated["plugin"] = plugin
     return migrated
 
+def normalize_observability_log_level(value: Any) -> str:
+    level=str(value or _OBSERVABILITY_DEFAULTS["log_level"]).strip().lower()
+    return level if level in _OBSERVABILITY_LOG_LEVELS else _OBSERVABILITY_DEFAULTS["log_level"]
+
 def resolve_config(agent:Any|None=None, explicit:dict[str,Any]|None=None)->dict[str,Any]:
     default=load_default_config(); runtime=explicit
     if runtime is None:
@@ -107,6 +113,13 @@ def resolve_config(agent:Any|None=None, explicit:dict[str,Any]|None=None)->dict[
     verification.setdefault("cache_enabled", True)
     verification.setdefault("cache_ttl_seconds", 300)
     verification.setdefault("invalidate_on_config_change", True)
+    observability=resolved.setdefault("observability", {})
+    if not isinstance(observability,dict):
+        observability={}
+        resolved["observability"]=observability
+    for key, value in _OBSERVABILITY_DEFAULTS.items():
+        observability.setdefault(key, value)
+    observability["log_level"]=normalize_observability_log_level(observability.get("log_level"))
     for name,mode in _LAYER_DEFAULT_MODES.items():
         cfg=resolved["layers"].setdefault(name,{}); cfg.setdefault("enabled",True); cfg.setdefault("mode",mode)
     try:
@@ -148,6 +161,7 @@ def is_layer_enabled(config:dict[str,Any], layer_name:str)->bool: return is_plug
 def layer_mode(config:dict[str,Any], layer_name:str, default:str|None=None)->str:
     fallback=default if default is not None else _LAYER_DEFAULT_MODES.get(layer_name,"standard"); return str(get_in(config,f"layers.{layer_name}.mode",fallback) or fallback).strip().lower()
 def prompt_verbosity(config:dict[str,Any])->str: return str(get_in(config,"prompt_policy.verbosity","standard") or "standard").strip().lower()
+def observability_log_level(config:dict[str,Any])->str: return normalize_observability_log_level(get_in(config,"observability.log_level",_OBSERVABILITY_DEFAULTS["log_level"]))
 def bounded_recovery_settings(config:dict[str,Any])->dict[str,Any]:
     bounded=get_in(config,"bounded_recovery",{}) if isinstance(config,dict) else {}
     if not isinstance(bounded,dict):

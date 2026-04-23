@@ -7,7 +7,7 @@ import re
 from usr.plugins.cognition_layers.helpers.compat import mq
 from usr.plugins.cognition_layers.helpers import state
 from usr.plugins.cognition_layers.clf.context_manager import ContextManager
-from usr.plugins.cognition_layers.helpers.policy import bounded_recovery_settings, bounded_text, effective_bounded_recovery_settings, plugin_status, scope_for_agent
+from usr.plugins.cognition_layers.helpers.policy import bounded_recovery_settings, bounded_text, effective_bounded_recovery_settings, observability_log_level, plugin_status, scope_for_agent
 from usr.plugins.cognition_layers.clf.conformance import claim_readiness
 from usr.plugins.cognition_layers.clf.self_correction_trigger import SelfCorrectionTrigger
 
@@ -424,6 +424,16 @@ def format_context_compaction_event(compaction: dict[str, Any]) -> str:
         next_step="Inject this recovery block into the next prompt as cognition_layers_context.",
     )
 
+def _should_log_runtime_event(config: dict[str, Any], *, event_level: str) -> bool:
+    cfg = config if isinstance(config, dict) else {}
+    if not bool(cfg.get("observability", {}).get("log_decisions", True)):
+        return False
+    level = observability_log_level(cfg)
+    normalized_event_level = "info" if str(event_level or "").strip().lower() == "info" else "debug"
+    if normalized_event_level == "info":
+        return level in {"info", "debug"}
+    return level == "debug"
+
 
 def log_runtime_event(
     agent: Any | None,
@@ -431,10 +441,11 @@ def log_runtime_event(
     *,
     config: dict[str, Any] | None = None,
     dedupe_key: str | None = None,
+    event_level: str = "debug",
     source: str = "Cognition Layers",
 ) -> None:
     cfg = config if isinstance(config, dict) else {}
-    if not bool(cfg.get("observability", {}).get("log_decisions", True)):
+    if not _should_log_runtime_event(cfg, event_level=event_level):
         return
     if dedupe_key and _remember_runtime_event(agent, dedupe_key):
         return
@@ -466,6 +477,7 @@ def announce_profile_activation(agent: Any | None, status: dict[str, Any], confi
         format_profile_activation_event(effective, mode),
         config=config,
         dedupe_key=f"profile:{dedupe_key}",
+        event_level="debug",
     )
 
 
@@ -473,10 +485,11 @@ def record_decision(agent: Any | None, decision: dict[str, Any], config: dict[st
     record = deepcopy(redact_value(decision))
     record.setdefault("scope", scope_for_agent(agent))
     saved = state.add_decision(record)
-    if record.get("action") in {"warn", "block"} and bool(config.get("observability", {}).get("log_rejections", True)):
-        log_runtime_event(agent, format_verification_event(record), config=config)
+    if record.get("action") in {"warn", "block"}:
+        if bool(config.get("observability", {}).get("log_rejections", True)):
+            log_runtime_event(agent, format_verification_event(record), config=config, event_level="info")
     elif bool(config.get("observability", {}).get("log_decisions", True)):
-        log_runtime_event(agent, format_verification_event(record), config=config)
+        log_runtime_event(agent, format_verification_event(record), config=config, event_level="debug")
     return saved
 
 
@@ -490,6 +503,7 @@ def record_correction(agent: Any | None, event: dict[str, Any], config: dict[str
             format_self_correction_event(record),
             config=config,
             dedupe_key=f"self-correction:{record.get('state')}:{record.get('trigger')}:{record.get('attempt')}:{record.get('action')}",
+            event_level="debug",
         )
     return saved
 

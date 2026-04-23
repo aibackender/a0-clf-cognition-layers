@@ -255,6 +255,7 @@ class CognitionOrchestrator:
                 telemetry.format_context_checkpoint_event(checkpoint),
                 config=context.config,
                 dedupe_key=f"context-checkpoint:{checkpoint.get('id')}",
+                event_level="debug",
             )
             return [publish_event("context.checkpointed", {"checkpoint_id": checkpoint.get("id"), "context_id": checkpoint.get("context_id")})]
         if operation=="refresh_status":
@@ -295,6 +296,7 @@ class CognitionOrchestrator:
             telemetry.format_pattern_event(dicts, persisted=persisted),
             config=context.config,
             dedupe_key="patterns:" + ",".join(str(item.get("id") or item.get("pattern") or "") for item in dicts),
+            event_level="debug",
         )
         effects=[publish_event("pattern.detected",{"count":len(dicts),"patterns":dicts})]
         if persisted:
@@ -326,6 +328,7 @@ class CognitionOrchestrator:
             telemetry.format_context_restore_event(restored),
             config=context.config,
             dedupe_key=f"context-restore:{restored.get('checkpoint_id') or 'none'}:{restored.get('resolution')}",
+            event_level="debug",
         )
         return [publish_event("context.restored", restored)]
 
@@ -339,6 +342,7 @@ class CognitionOrchestrator:
                 telemetry.format_context_compaction_event(compaction),
                 config=context.config,
                 dedupe_key=f"context-compaction:{compaction.get('source_checkpoint_id')}:{len(compaction.get('items',[]) or [])}:{bool(compaction.get('truncated'))}",
+                event_level="debug",
             )
         effects=[publish_event("context.compacted", compaction)]
         if compaction.get("text"):

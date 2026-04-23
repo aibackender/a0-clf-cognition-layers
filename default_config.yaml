@@ -90,6 +90,7 @@ prompt_policy:
   max_injected_chars: 900
 
 observability:
+  log_level: info
   log_decisions: true
   log_rejections: true
   retain_history_days: 14
