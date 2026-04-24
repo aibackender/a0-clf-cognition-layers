@@ -1,18 +1,13 @@
-# Extensions Documentation
+# Extensions Contracts
 
 ## Purpose
-The `extensions/` directory contains hooks and WebUI extensions for various stages of the Agent Zero lifecycle.
+
+The `extensions/` directory contains Agent Zero integration hooks and extension bridge code for the plugin runtime.
 
 ### Ownership
 
-- **Primary Owner**: AI Agents
-- **Purpose**: Provide hooks for various stages of the Agent Zero lifecycle and WebUI interactions.
-
----
-
-## Documentation Hierarchy
-
-- **Level 1 (Core Domain Docs)**: Architecture and contracts for extensions in `extensions/`.
+- Primary owner: AI agents
+- Scope: hook entrypoints and extension-specific bridge behavior under `extensions/`
 
 ---
 
@@ -20,55 +15,32 @@ The `extensions/` directory contains hooks and WebUI extensions for various stag
 
 ### Python Hooks
 
-- **Purpose**: Handle various stages of the Agent Zero lifecycle.
-- **Implementation Contracts**:
-  - **Agent Initialization**: Initializes the cognition layers runtime.
-  - **Pre-LLM Call**: Preflight checks before LLM calls.
-  - **Tool Execution Before/After**: Handles tool execution stages.
-  - **Message Loop Prompts After**: Injects prompts after message loop prompts.
-  - **Message Loop End**: Handles end of message loop.
+- `extensions/python` hooks remain thin wrappers.
+- Each hook should:
+  - bootstrap or access runtime state
+  - build adapter context
+  - invoke one runtime entry point
+  - apply returned effects
+- Hooks do not own verification policy, pattern persistence rules, recovery policy, or raw state-file handling.
 
-### WebUI Extensions
+### WebUI Extension Bridge
 
-- **Purpose**: Provide user interface interactions.
-- **Implementation Contracts**:
-  - **Runtime Handler**: Manages runtime interactions in the WebUI.
-
----
-
-## Implementation Rules
-
-### Code Quality
-
-- Maintain high code quality standards.
-- Follow consistent coding practices and style guides.
-
-### Documentation
-
-- Ensure all code and configurations are well-documented.
-- Update documentation in the same session as code changes.
-
-### Security
-
-- Follow security best practices to protect data and operations.
+- `extensions/webui` owns only extension bridge and handler behavior under `extensions/`.
+- It does not own top-level page behavior in `/webui/`.
 
 ---
 
-## Workflows
+## Boundaries
 
-### Development Workflow
-
-1. **Code Review**: All changes should be reviewed by the AI agents.
-2. **Testing**: Ensure all components are tested for functionality and robustness.
-3. **Documentation**: Update documentation as needed.
-
-### Maintenance Workflow
-
-1. **Monitoring**: Continuously monitor system performance and logs.
-2. **Pattern Updates**: Update hooks and UI interactions as needed.
+- `extensions/` does not own top-level `webui/` configuration page behavior.
+- `extensions/` does not own persisted config-shape normalization.
+- If a change primarily affects UI hydration, defaults merging, or page-level help text, update `/webui/AGENTS.md` instead.
+- If a change primarily affects runtime semantics, update the owning `clf/` or `helpers/` contracts instead of expanding hook logic.
 
 ---
 
-## Documentation Ownership
+## Development Guidance
 
-- **Module-local `AGENTS.md`**: Owns the concrete contracts for major modules and surfaces in `extensions/`.
+- Keep hooks intentionally small and predictable.
+- Prefer passing normalized data into the runtime rather than duplicating normalization inside hooks.
+- Preserve hook stage boundaries so Agent Zero lifecycle behavior remains easy to reason about and test.

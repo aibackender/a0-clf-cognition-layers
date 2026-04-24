@@ -1,19 +1,14 @@
-# Cognition Layers Documentation
+# Cognition Layers Core Contracts
 
 ## Purpose
 
-The `clf/` directory contains the core components for the Cognition Layers plugin, which provide cognitive behavior, pattern detection, and self-correction capabilities within the Agent Zero framework.
+The `clf/` directory contains the core runtime surfaces for the Cognition Layers plugin.
+These components orchestrate verification, pattern memory, context recovery, and self-correction inside Agent Zero.
 
 ### Ownership
 
-- **Primary Owner**: AI Agents
-- **Purpose**: Facilitate cognitive functions, pattern detection, and self-correction.
-
----
-
-## Documentation Hierarchy
-
-- **Level 1 (Core Domain Docs)**: Architecture and contracts for core components in `clf/`.
+- Primary owner: AI agents
+- Scope: core runtime behavior and cross-surface coordination inside `clf/`
 
 ---
 
@@ -21,103 +16,70 @@ The `clf/` directory contains the core components for the Cognition Layers plugi
 
 ### CognitionAdapter
 
-- **Purpose**: Adapts the plugin to Agent Zero.
-- **Implementation Contracts**:
-  - Builds context for agent operations.
-  - Manages tool invocation and response payloads.
-  - Handles context snapshots and capability summaries.
+- Builds runtime context from host hook inputs.
+- Applies runtime effects back to Agent Zero.
+- Treats helper-owned config, telemetry, and state APIs as the source of truth.
 
 ### EventBus
 
-- **Purpose**: Manages event publishing and subscription.
-- **Implementation Contracts**:
-  - Publishes and subscribes to events.
-  - Configures event history and queue limits.
-  - Provides statistics and recent event retrieval.
+- Publishes and subscribes to internal runtime events.
+- Owns in-memory event coordination, not long-term persistence formats.
 
 ### CognitionOrchestrator
 
-- **Purpose**: Orchestrates cognitive tasks.
-- **Implementation Contracts**:
-  - Registers and manages components.
-  - Processes and evaluates cognitive tasks.
-  - Handles orchestration plans and execution.
+- Routes hook triggers through the CLF runtime plan.
+- Preserves observability and persistence side effects exposed by helper APIs.
+- Must not bypass helper-owned config or state normalization.
 
 ### VerificationGuardian
 
-- **Purpose**: Ensures tool and operation verification.
-- **Implementation Contracts**:
-  - Verifies tool calls and arguments.
-  - Analyzes shell commands, file destinations, and content payloads.
-  - Manages verification cache and policies.
+- Verifies tool calls and arguments.
+- Analyzes shell commands, file destinations, content payloads, and credential likelihood.
+- Relies on normalized config and verification-cache contracts owned by `helpers/`.
 
 ### PatternDetector
 
-- **Purpose**: Detects patterns in agent behavior.
-- **Implementation Contracts**:
-  - Detects and classifies patterns from observations.
-  - Validates and stores detected patterns.
-  - Queries and retrieves patterns.
+- Detects and classifies patterns from observations.
+- Produces normalized pattern records for helper-managed persistence.
 
 ### PatternPersistenceCore
 
-- **Purpose**: Persists detected patterns.
-- **Implementation Contracts**:
-  - Saves and loads patterns.
-  - Manages pattern transitions and deletions.
-  - Provides pattern summaries and retrieval.
+- Retrieves patterns through centralized helper persistence APIs.
+- Tracks cooldown context ids when patterns are selected for prompt injection.
+- Marks prompt-selected patterns active through helper-managed saves instead of mutating raw files directly.
 
 ### ContextManager
 
-- **Purpose**: Manages context and state.
-- **Implementation Contracts**:
-  - Creates and restores checkpoints.
-  - Compacts context to manage memory usage.
-  - Provides context summaries.
+- Creates, restores, and summarizes checkpoints.
+- Builds checkpoints from rollup decisions and corrections plus separately loaded patterns.
+- Must respect effective bounded-recovery settings when choosing restore behavior.
 
 ### SelfCorrectionTrigger
 
-- **Purpose**: Triggers self-correction mechanisms.
-- **Implementation Contracts**:
-  - Evaluates failures and builds correction decisions.
-  - Manages runtime state and correction summaries.
+- Evaluates failures and builds correction decisions.
+- Preserves claim-conformance and bounded-recovery semantics exposed by the config layer.
 
 ---
 
-## Implementation Rules
+## Integration Boundaries
 
-### Code Quality
-
-- Maintain high code quality standards.
-- Follow consistent coding practices and style guides.
-
-### Documentation
-
-- Ensure all code and configurations are well-documented.
-- Update documentation in the same session as code changes.
-
-### Security
-
-- Follow security best practices to protect data and operations.
+- Core CLF surfaces must consume helper-owned config and state APIs instead of reading raw files directly.
+- `clf/` owns runtime behavior, not persisted config-shape migration or UI payload unwrapping.
+- Conformance, claim signaling, and bounded-recovery overrides are runtime contracts and must remain consistent across orchestrator, registry, context, and self-correction flows.
 
 ---
 
-## Workflows
+## Current Runtime Contracts
 
-### Development Workflow
-
-1. **Code Review**: All changes should be reviewed by the AI agents.
-2. **Testing**: Ensure all components are tested for functionality and robustness.
-3. **Documentation**: Update documentation as needed.
-
-### Maintenance Workflow
-
-1. **Monitoring**: Continuously monitor system performance and logs.
-2. **Pattern Updates**: Update pattern detection rules and persistence mechanisms.
-3. **Self-Correction**: Implement and test self-correction mechanisms.
+- `plugin.profile` is the canonical profile selector.
+- `claim_conformance` and bounded-recovery overrides affect effective runtime and conformance reporting and must be preserved.
+- Pattern retrieval and checkpoint summaries depend on the split between pattern storage and rollup storage.
+- Observability emitted by core surfaces must respect helper-owned telemetry controls rather than inventing local logging policy.
 
 ---
 
-## Documentation Ownership
+## Development Guidance
 
-- **Module-local `AGENTS.md`**: Owns the concrete contracts for major modules and surfaces in `clf/`.
+- Prefer extending helper-owned abstractions when core behavior needs normalized config or persistence access.
+- Keep hook-facing behavior stable by changing adapter and orchestrator seams deliberately.
+- When changing persistence-sensitive core behavior, update `helpers/AGENTS.md` and `clf/AGENTS.md` together if ownership crosses that boundary.

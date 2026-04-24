@@ -2,44 +2,44 @@
 
 ## 1. Core Principle: Documentation is Runtime
 
-Documentation in this repository is **not optional**.  
-Every `AGENTS.md` file defines **binding behavior contracts** for agents and contributors.
+Documentation in this repository is not optional.
+Every `AGENTS.md` file defines binding behavior contracts for agents and contributors.
 
 If documentation is outdated or incorrect:
 - agent behavior will drift
 - architecture will degrade
 - incorrect changes will propagate
 
-**Rule:** Any code change MUST update the relevant `AGENTS.md` in the same session.
+Rule: any code change must update the relevant `AGENTS.md` in the same session.
 
 ---
 
 ## 2. Documentation Hierarchy
 
-This repository follows a strict documentation ownership model:
+This repository follows a strict documentation ownership model.
 
 ### Levels
 
-- **Level 0 — `/AGENTS.md` (this file)**
+- Level 0: `/AGENTS.md`
   - Global rules
   - Architecture boundaries
   - Documentation policy
-
-- **Level 1 — Domain Docs (`/clf/AGENTS.md`, `/extensions/AGENTS.md`)**
-  - Subsystem architecture
-  - Stable interfaces and contracts
-
-- **Level 2 — Module Docs**
+- Level 1: domain docs
+  - `/clf/AGENTS.md`
+  - `/extensions/AGENTS.md`
+  - `/helpers/AGENTS.md`
+  - `/webui/AGENTS.md`
+- Level 2: module docs
   - Concrete implementation rules
   - File ownership
   - Local behavior contracts
 
 ### Rules
 
-- The **closer the doc is to the code**, the more specific it must be
-- The **higher the doc**, the more stable and abstract it must be
-- **Never duplicate contracts across levels**
-- **Always update the closest owning document**
+- The closer the doc is to the code, the more specific it must be.
+- The higher the doc, the more stable and abstract it must be.
+- Never duplicate contracts across levels.
+- Always update the closest owning document.
 
 ---
 
@@ -47,21 +47,23 @@ This repository follows a strict documentation ownership model:
 
 ### Plugin: `a0-clf-cognition-layers`
 
-Provides **cognitive control layers** for Agent Zero:
+Provides cognitive control layers for Agent Zero:
 
 - verification
 - pattern detection
 - context control
 - self-correction
+- observability
+- safe persistence
 
-This is a **plugin implementation of CLF concepts**.
+This is a plugin implementation of CLF concepts.
 
 ---
 
 ## 4. Ownership Model
 
-- **Primary maintainers:** AI agents (execution + iteration)
-- **Human role:** validation, correction, boundary enforcement
+- Primary maintainers: AI agents
+- Human role: validation, correction, boundary enforcement
 
 Agents are expected to:
 - follow contracts defined in `AGENTS.md`
@@ -76,32 +78,48 @@ Agents are expected to:
 
 Key components:
 
-- `CognitionAdapter` → Integration with Agent Zero
-- `CognitionOrchestrator` → Controls cognitive flow
-- `EventBus` → Internal communication layer
-- `VerificationGuardian` → Safety + validation layer
-- `PatternDetector` → Behavioral pattern recognition
-- `PatternPersistenceCore` → Pattern storage
-- `ContextManager` → Context lifecycle control
-- `SelfCorrectionTrigger` → Error recovery activation
+- `CognitionAdapter` -> integration with Agent Zero
+- `CognitionOrchestrator` -> controls cognitive flow
+- `EventBus` -> internal communication layer
+- `VerificationGuardian` -> safety and validation layer
+- `PatternDetector` -> behavioral pattern recognition
+- `PatternPersistenceCore` -> pattern selection and persistence orchestration
+- `ContextManager` -> context lifecycle control
+- `SelfCorrectionTrigger` -> error recovery activation
+
+### Helpers (`/helpers/`)
+
+Shared runtime infrastructure:
+
+- config resolution and normalization
+- persistence and state integrity
+- telemetry formatting and redaction
+- compatibility helpers and schemas
 
 ### Extensions (`/extensions/`)
 
 - Python lifecycle hooks
-- WebUI integration layer
+- extension bridge code for Agent Zero integration
+
+### WebUI (`/webui/`)
+
+- top-level configuration and status pages
+- UI-side normalization and presentation logic for plugin settings
 
 ### API (`/api/`)
 
-- Status
-- Profiles
-- Events
-- Patterns
-- Configuration
+- status
+- profiles
+- events
+- patterns
+- defaults and configuration reads
 
-### Configuration
+### Configuration And State Ownership
 
-- `plugin.yaml` → plugin definition
-- `default_config.yaml` → runtime behavior
+- `plugin.yaml` -> plugin definition and plugin release metadata
+- `default_config.yaml` -> default runtime behavior
+- `helpers/policy.py` -> config resolution and normalization
+- `helpers/state.py` -> plugin-local persistence ownership
 
 ---
 
@@ -109,11 +127,24 @@ Key components:
 
 ### README vs AGENTS
 
-- `README.md` → public-facing (what this is)
-- `AGENTS.md` → internal contract (how this behaves)
+- `README.md` -> public-facing product description
+- `AGENTS.md` -> internal implementation contracts
 
-**Rule:**  
-Do not move implementation rules into README.
+Rule:
+do not move implementation rules into README.
+
+### Versioning And Compatibility
+
+- `plugin.yaml` owns the plugin/package version.
+- CLF `spec_version` is a compatibility contract and is not the same as the plugin release number.
+- Version-only changes do not justify broad doc churn beyond the ownership note above.
+
+### Domain Ownership
+
+- `/clf/AGENTS.md` owns core runtime contracts.
+- `/helpers/AGENTS.md` owns config, persistence, telemetry, and compatibility helper contracts.
+- `/extensions/AGENTS.md` owns hook and extension bridge contracts.
+- `/webui/AGENTS.md` owns top-level page behavior and UI-side config hydration contracts.
 
 ---
 
@@ -121,20 +152,22 @@ Do not move implementation rules into README.
 
 ### Non-negotiable
 
-- Update docs with every change
-- Respect module ownership
-- Do not introduce cross-layer coupling
-- Prefer minimal, controlled changes
+- update docs with every change
+- respect module ownership
+- do not introduce cross-layer coupling
+- prefer minimal, controlled changes
 
 ### Architecture Rule
 
-- Prefer frontend or extension-layer solutions
-- Backend changes are **exceptional**
-- Only modify backend for:
+- prefer frontend or extension-layer solutions when they preserve behavior safely
+- backend changes are exceptional
+- only modify backend for:
   - security
   - integrity
   - multi-user isolation
   - runtime stability
+  - state integrity
+  - observability correctness
 
 ---
 
@@ -146,13 +179,14 @@ Agents operating on this repo should:
 - maintain consistency with existing patterns
 - avoid speculative refactors
 - log meaningful actions
+- preserve compatibility for persisted config and state shapes
 
 ### Required Capabilities
 
-- Testing
-- Documentation updates
-- Monitoring awareness
-- Safe self-correction
+- testing
+- documentation updates
+- monitoring awareness
+- safe self-correction
 
 ---
 
@@ -160,18 +194,19 @@ Agents operating on this repo should:
 
 ### Development
 
-1. Modify code
-2. Update relevant `AGENTS.md`
-3. Validate behavior
-4. Run tests
-5. Commit
+1. Modify code.
+2. Update the closest owning `AGENTS.md`.
+3. Validate behavior.
+4. Run tests or checks appropriate to the change.
+5. Commit.
 
 ### Maintenance
 
-- Monitor logs and system behavior
-- Update pattern detection rules
-- Validate persistence and state integrity
-- Improve correction mechanisms safely
+- monitor logs and system behavior
+- update pattern detection rules safely
+- validate persistence and state integrity
+- keep observability behavior aligned with runtime semantics
+- improve correction mechanisms safely
 
 ---
 
@@ -179,24 +214,26 @@ Agents operating on this repo should:
 
 Each `AGENTS.md` should include:
 
-- Purpose
-- Ownership
-- Contracts
-- Boundaries
-- Development guidance
+- purpose
+- ownership
+- contracts
+- boundaries
+- development guidance
 
 ### Anti-patterns
 
-- Duplicated rules across files
-- Mixing philosophy with contracts
-- Outdated documentation
-- Vague responsibilities
+- duplicated rules across files
+- mixing philosophy with contracts
+- outdated documentation
+- vague responsibilities
 
 ---
 
 ## 11. Ownership Map
 
-- `/README.md` → Product entry point
-- `/AGENTS.md` → Global contract
-- `/clf/AGENTS.md` → Core cognition system
-- `/extensions/AGENTS.md` → Integration layer
+- `/README.md` -> product entry point
+- `/AGENTS.md` -> global contract
+- `/clf/AGENTS.md` -> core cognition system
+- `/extensions/AGENTS.md` -> integration layer
+- `/helpers/AGENTS.md` -> config, persistence, telemetry, and compatibility helpers
+- `/webui/AGENTS.md` -> top-level plugin UI pages
