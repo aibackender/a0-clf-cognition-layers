@@ -511,15 +511,17 @@ def record_correction(agent: Any | None, event: dict[str, Any], config: dict[str
 def status_summary(agent: Any | None = None, config: dict[str, Any] | None = None) -> dict[str, Any]:
     cfg = config or {}
     rollup = state.load_rollup()
-    patterns = state.load_patterns()
+    patterns = state.load_patterns(limit=10)
     base = plugin_status(agent=agent, explicit=cfg if cfg else None)
     profile = base.get("profile", {}) if isinstance(base.get("profile", {}), dict) else {}
     bounded = bounded_recovery_settings(cfg)
     effective_bounded = effective_bounded_recovery_settings(cfg)
-    base["counters"] = rollup.get("counters", {})
+    counters = rollup.get("counters", {})
+    base["counters"] = counters
     base["recent_decisions"] = rollup.get("recent_decisions", [])[-20:]
     base["recent_corrections"] = rollup.get("recent_corrections", [])[-20:]
-    base["pattern_count"] = len(patterns)
+    patterns_total = int(counters.get("patterns_total", 0) or 0) if isinstance(counters, dict) else 0
+    base["pattern_count"] = patterns_total if patterns_total > 0 else len(patterns)
     base["verification_cache"] = state.verification_cache_stats(cfg)
     base["unsupported_behaviors"] = profile.get("unsupported_behaviors", [])
     base["checkpoint_summary"] = ContextManager(cfg).summary(agent)

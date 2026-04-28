@@ -94,4 +94,5 @@ observability:
   log_decisions: true
   log_rejections: true
   retain_history_days: 14
+  cleanup_interval_seconds: 3600
   expose_debug_api: true

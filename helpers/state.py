@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from threading import RLock
 from typing import Any, Mapping
+import hashlib
 import json
 import os
 import re
@@ -20,6 +21,7 @@ PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 LEGACY_STATE_DIR = PLUGIN_ROOT / "state"
 _STATE_LOCK = RLock()
 _STATE_ROOT_OVERRIDE: Path | None = None
+_PROFILE_STATUS_HASH_KEY = "_cognition_layers_profile_hash"
 
 
 def resolve_state_root(
@@ -929,6 +931,24 @@ def save_profile_status(status: dict[str, Any]) -> dict[str, Any]:
     normalized = normalize_profile_status(status)
     _write_json(PROFILE_STATUS_FILE, normalized)
     return normalized
+
+
+def save_profile_status_if_changed(agent: Any | None, status: dict[str, Any]) -> dict[str, Any]:
+    normalized = normalize_profile_status(status)
+    hash_source = deepcopy(normalized)
+    hash_source.pop("updated_at", None)
+    profile_hash = hashlib.sha256(
+        json.dumps(hash_source, sort_keys=True, default=str).encode("utf-8")
+    ).hexdigest()
+
+    data = getattr(agent, "data", None) if agent is not None else None
+    if isinstance(data, dict) and data.get(_PROFILE_STATUS_HASH_KEY) == profile_hash:
+        return normalized
+
+    saved = save_profile_status(normalized)
+    if isinstance(data, dict):
+        data[_PROFILE_STATUS_HASH_KEY] = profile_hash
+    return saved
 
 
 def load_profile_status() -> dict[str, Any]:

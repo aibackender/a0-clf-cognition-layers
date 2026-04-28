@@ -94,6 +94,7 @@ class CognitionOrchestrator:
 
     def process(self, context:AgentContext, trigger:str)->list[Effect]:
         context.trigger=trigger
+        self._idempotency_cache.clear()
         evaluation=self.evaluate(context,trigger)
         plan=self.plan(context,evaluation)
         validation=self.validate(context,plan)
@@ -128,7 +129,6 @@ class CognitionOrchestrator:
         if trigger=="prompt_injection": operations.append(("cognition_adapter","inject_policy_prompt"))
         if trigger=="loop_end": operations.append(("cognition_adapter","cleanup_state"))
         if trigger=="loop_end" and context.surface_enabled("context_manager"): operations.append(("context_manager","checkpoint_context"))
-        if trigger in {"init","pre_llm"}: operations.append(("cognition_adapter","refresh_status"))
         actions:list[PlannedAction]=[]
         previous:list[str]=[]
         for index, (component, operation) in enumerate(operations, start=1):
@@ -189,8 +189,21 @@ class CognitionOrchestrator:
         execution=result.get("execution")
         if execution is not None:
             effects.append(publish_event("orchestrator.completed",{"trigger":context.trigger,"execution":execution.to_dict(),"effects":len(effects)}))
-        effects.append(refresh_status(self._status(context)))
+        if self._should_refresh_status(context):
+            effects.append(refresh_status(self._status(context)))
         return effects
+
+    def _should_refresh_status(self, context:AgentContext, min_interval_s:float=5.0)->bool:
+        data=getattr(context.agent,"data",None) if context.agent is not None else None
+        now=time.monotonic()
+        if isinstance(data,dict):
+            last_raw=data.get("_cognition_layers_last_status_refresh")
+            if last_raw is not None:
+                last=float(last_raw or 0)
+                if now - last < min_interval_s:
+                    return False
+            data["_cognition_layers_last_status_refresh"]=now
+        return True
 
     def _run_action(self, context:AgentContext, action:PlannedAction)->tuple[list[Effect], ActionExecutionResult]:
         idempotency_key=self._idempotency_key(context, action)
@@ -350,9 +363,20 @@ class CognitionOrchestrator:
         return effects
 
     def _cleanup_state(self, context:AgentContext)->list[Effect]:
-        snap=state.snapshot()
+        data=getattr(context.agent,"data",None) if context.agent is not None else None
+        now=time.monotonic()
+        cleanup_interval=max(0,int(get_in(context.config,"observability.cleanup_interval_seconds",3600) or 3600))
+        if isinstance(data,dict):
+            last_raw=data.get("_cognition_layers_last_cleanup_monotonic")
+            if last_raw is not None:
+                last=float(last_raw or 0)
+                if now - last < cleanup_interval:
+                    return []
+        snap=state.load_state()
         cleaned=state.cleanup_state(snap, retain_days=int(get_in(context.config,"observability.retain_history_days",14) or 14), max_patterns=int(get_in(context.config,"pattern_memory.max_patterns",500) or 500))
         state.save_state(cleaned)
+        if isinstance(data,dict):
+            data["_cognition_layers_last_cleanup_monotonic"]=now
         return [publish_event("context.cleaned",{"patterns":len(cleaned.get("patterns",[]))})]
 
     def _status(self, context:AgentContext)->dict[str,Any]:

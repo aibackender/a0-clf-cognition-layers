@@ -12,7 +12,7 @@ from usr.plugins.cognition_layers.helpers.policy import layer_states, resolve_co
 class CognitionAdapter:
     def __init__(self, config:dict[str,Any]|None=None, profile_status:ProfileStatus|None=None): self.config=config if isinstance(config,dict) else {}; self.profile_status=profile_status
     def build_context(self, agent_zero_ctx:Any|None, *, trigger:str|None=None, **kwargs:Any)->AgentContext:
-        agent=agent_zero_ctx; cfg=self.config or resolve_config(agent=agent); prof=self.profile_status or resolve_profile(cfg); state.ensure_storage(); state.save_profile_status(prof.to_dict())
+        agent=agent_zero_ctx; cfg=self.config or resolve_config(agent=agent); prof=self.profile_status or resolve_profile(cfg); state.ensure_storage(); state.save_profile_status_if_changed(agent, prof.to_dict())
         context=getattr(agent,"context",None) if agent is not None else None; config_obj=getattr(agent,"config",None) if agent is not None else None; context_id=getattr(context,"id",None); agent_id=getattr(config_obj,"profile",None) or getattr(agent,"agent_name",None) or getattr(agent,"name",None) or context_id
         loop_data=self.get_loop_data(kwargs); tool=self.get_pending_tool(agent,kwargs); prompt=self.get_prompt_state(agent,loop_data)
         built=AgentContext(agent=agent,agent_id=str(agent_id) if agent_id is not None else None,context_id=str(context_id) if context_id is not None else None,scope=scope_for_agent(agent),config=cfg,profile_status=prof,host_capabilities=self.host_capabilities(agent,loop_data=loop_data),trigger=trigger,tool=tool,response=self.get_response_payload(kwargs),loop_data=loop_data,prompt_state=prompt,snapshot=self.snapshot_context(agent),last_result=self.get_last_tool_result(agent))
