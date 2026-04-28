@@ -102,7 +102,7 @@
     <div class="flex items-center justify-between gap-3">
       <div>
         <div class="font-semibold text-base">Cognition Layers Status</div>
-        <p class="text-zinc-300">Inspect the active CLF profile, recent verification/recovery activity, and the plugin-local runtime state.</p>
+        <p class="text-zinc-300">Inspect the active CLF profile, recent verification/recovery activity, and the Agent Zero user-data runtime state.</p>
       </div>
       <button
         class="rounded border border-zinc-600 px-3 py-1.5 text-xs text-zinc-200 hover:bg-zinc-800"
@@ -226,8 +226,8 @@
                 <div class="font-medium text-zinc-100 break-all" x-text="label(checkpointSummary().latest_context_id)"></div>
               </div>
               <div class="rounded border border-zinc-800 bg-zinc-950/50 px-3 py-2">
-                <div class="text-zinc-400">Plugin-local only</div>
-                <div class="font-medium text-zinc-100" x-text="checkpointSummary().plugin_local_only ? 'Yes' : 'No'"></div>
+                <div class="text-zinc-400">Storage scope</div>
+                <div class="font-medium text-zinc-100" x-text="label(checkpointSummary().storage_path, 'usr/cognition_layers/state')"></div>
               </div>
             </div>
             <div class="space-y-2">
@@ -284,8 +284,8 @@
                 <div class="font-medium text-zinc-100" x-text="label(selfCorrectionSummary().last_correction_state)"></div>
               </div>
               <div class="rounded border border-zinc-800 bg-zinc-950/50 px-3 py-2">
-                <div class="text-zinc-400">Plugin-local only</div>
-                <div class="font-medium text-zinc-100" x-text="selfCorrectionSummary().plugin_local_only ? 'Yes' : 'No'"></div>
+                <div class="text-zinc-400">Storage scope</div>
+                <div class="font-medium text-zinc-100" x-text="label(selfCorrectionSummary().storage_path, 'usr/cognition_layers/state')"></div>
               </div>
             </div>
             <div class="space-y-2">

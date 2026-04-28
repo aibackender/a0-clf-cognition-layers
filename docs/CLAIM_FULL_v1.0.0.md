@@ -27,9 +27,9 @@ This repository publishes a plugin-only CLF `v1.0.0` **Full** claim path alongsi
 - `L3_SHARED` pattern persistence
 - Discovery mode and external recovery coordinators
 
-## Plugin-Local Recovery Contract
+## Agent Zero `usr` Recovery Contract
 
-- Recovery state is stored only in plugin-owned local JSON checkpoints and agent-local runtime memory.
+- Recovery state is stored only in Agent Zero `usr` JSON checkpoints and agent-local runtime memory.
 - `ContextManager` restores by `context_id`, then compatible scope, then latest compatible checkpoint.
 - `SelfCorrectionTrigger` certifies both `advisory` and `auto` modes, with the Full certification fixture using `auto`.
 - Automatic recovery is limited to local guidance and local `break_loop` continuation; no host-owned retries or subordinate execution are claimed.
@@ -86,5 +86,5 @@ This repository publishes a plugin-only CLF `v1.0.0` **Full** claim path alongsi
 ## Host Constraints
 
 - Full readiness still requires Core and Standard fixtures and suites to remain green.
-- Checkpointing and recovery are plugin-local only.
+- Checkpointing and recovery are Agent Zero `usr` local only.
 - No claim is made for subordinate execution, shared/global recovery state, or host-managed retries.

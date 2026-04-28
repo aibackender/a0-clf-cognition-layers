@@ -38,12 +38,8 @@ layers:
     mode: standard
 
 verification:
-  protected_tools:
-    - code_execution_tool
-    - browser_agent
-  protected_paths:
-    - /workspace
-    - /workspaces
+  protected_tools: []
+  protected_paths: []
   blocked_shell_patterns:
     - "rm -rf *"
     - "chmod -R 777 *"
@@ -54,7 +50,6 @@ verification:
   invalidate_on_config_change: true
   require_review_for:
     - destructive_file_edit
-    - external_write
     - credential_exposure
   max_risk_score: 70
 

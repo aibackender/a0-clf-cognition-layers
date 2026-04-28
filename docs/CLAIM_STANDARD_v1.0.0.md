@@ -79,7 +79,7 @@ This repository publishes a plugin-only CLF `v1.0.0` **Standard** claim path in 
 
 ## Host Constraints
 
-- Persistence is plugin-managed JSON in the host cache directory, outside the shipped plugin artifact.
+- Persistence is plugin-managed JSON in `usr/cognition_layers/state`, outside the shipped plugin artifact.
 - `L1_SESSION` and `L2_AGENT` are implemented locally in the plugin.
 - `L3_SHARED` is surfaced as an explicit structured `NOT_SUPPORTED` result.
 - Standard claim readiness still requires the Core claim fixture and suites to remain green.

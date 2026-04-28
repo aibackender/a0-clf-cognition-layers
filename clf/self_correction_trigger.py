@@ -310,7 +310,9 @@ class SelfCorrectionTrigger:
             "last_decision": state.get("last_decision"),
             "attempt_counter": state.get("attempt_counter", {}),
             "recent_failures": state.get("recent_failures", {}),
-            "plugin_local_only": True,
+            "storage_scope": "agent_zero_usr",
+            "storage_path": "usr/cognition_layers/state",
+            "plugin_local_only": False,
         }
 
     def evaluate(self, context: AgentContext, failure: Any = None) -> CorrectionDecision:

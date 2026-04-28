@@ -19,9 +19,17 @@ from usr.plugins.cognition_layers.helpers.pattern_summary import keyword_terms, 
 
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 LEGACY_STATE_DIR = PLUGIN_ROOT / "state"
+USER_STATE_DIRNAME = "cognition_layers"
 _STATE_LOCK = RLock()
 _STATE_ROOT_OVERRIDE: Path | None = None
 _PROFILE_STATUS_HASH_KEY = "_cognition_layers_profile_hash"
+
+
+def resolve_usr_root(plugin_root: str | Path | None = None) -> Path:
+    root = Path(plugin_root).expanduser().resolve() if plugin_root is not None else PLUGIN_ROOT
+    if root.name == "cognition_layers" and root.parent.name == "plugins" and root.parent.parent.name == "usr":
+        return root.parent.parent
+    return root.parent
 
 
 def resolve_state_root(
@@ -30,7 +38,8 @@ def resolve_state_root(
     env: Mapping[str, str] | None = None,
     home: str | Path | None = None,
 ) -> Path:
-    return PLUGIN_ROOT / "state"
+    _ = (platform_name, env, home)
+    return resolve_usr_root() / USER_STATE_DIRNAME / "state"
 
 
 def _active_state_root() -> Path:

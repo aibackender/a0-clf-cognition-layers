@@ -37,7 +37,7 @@ class SurfaceRegistry:
             warnings.append("Bounded recovery override is active; this run is outside the certified Full-profile behavior contract.")
         conformant=effective in {"core","standard","full"} and status=="conformant"
         if claim and not conformant: warnings.append("claim_conformance=true ignored because effective profile is custom."); claim=False
-        unsupported=["subordinates: NOT_SUPPORTED by this plugin runtime facade","L3_SHARED pattern persistence: NOT_SUPPORTED; plugin-owned local JSON only","shared/global recovery state: NOT_SUPPORTED; plugin-local checkpoints only","discovery mode: NOT_SUPPORTED","external invalidation sources: NOT_SUPPORTED"]+[f"{s}: NOT_SUPPORTED in active profile" for s in SURFACES if not active.get(s,False)]
+        unsupported=["subordinates: NOT_SUPPORTED by this plugin runtime facade","L3_SHARED pattern persistence: NOT_SUPPORTED; Agent Zero usr-local JSON only","shared/global recovery state: NOT_SUPPORTED; Agent Zero usr-local checkpoints only","discovery mode: NOT_SUPPORTED","external invalidation sources: NOT_SUPPORTED"]+[f"{s}: NOT_SUPPORTED in active profile" for s in SURFACES if not active.get(s,False)]
         return ProfileStatus(selected,effective,str(plugin.get("spec_version",SPEC_VERSION) or SPEC_VERSION),bool(claim and conformant),conformant,status,active,expected,warnings,unsupported)
     def validate_dependencies(self, active: dict[str,bool]) -> list[str]:
         w=[]

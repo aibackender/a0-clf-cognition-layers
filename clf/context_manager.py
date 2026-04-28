@@ -146,7 +146,9 @@ class ContextManager:
             "latest_compaction": data.get("_cognition_layers_last_compaction"),
             "bounded_recovery_enabled": bool(settings.get("enabled")),
             "max_restore_resolution": effective.get("max_restore_resolution"),
-            "plugin_local_only": True,
+            "storage_scope": "agent_zero_usr",
+            "storage_path": "usr/cognition_layers/state",
+            "plugin_local_only": False,
         }
 
     def _store_agent_state(self, context: AgentContext, key: str, value: dict[str, Any]) -> None:

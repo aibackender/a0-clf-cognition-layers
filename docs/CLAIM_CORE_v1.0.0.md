@@ -72,7 +72,7 @@
     "warnings": [],
     "unsupported_behaviors": [
       "subordinates: NOT_SUPPORTED by this plugin runtime facade",
-      "global/shared pattern persistence: NOT_SUPPORTED; plugin-owned local JSON only",
+      "global/shared pattern persistence: NOT_SUPPORTED; Agent Zero usr-local JSON only",
       "external invalidation sources: NOT_SUPPORTED",
       "pattern_detector: NOT_SUPPORTED in active profile",
       "pattern_persistence_core: NOT_SUPPORTED in active profile",

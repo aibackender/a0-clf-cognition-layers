@@ -118,6 +118,7 @@ Shared runtime infrastructure:
 
 - `plugin.yaml` -> plugin definition and plugin release metadata
 - `default_config.yaml` -> default runtime behavior
+  - verification default lists may intentionally be empty and must not be repopulated unless the default policy changes
 - `helpers/policy.py` -> config resolution and normalization
 - `helpers/state.py` -> plugin-local persistence ownership
 

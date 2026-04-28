@@ -71,7 +71,7 @@ surfaces:
 - **Standard Surfaces**: Core plus `PatternDetector` and `PatternPersistenceCore`
 - **Full Surfaces**: Standard plus `ContextManager` and `SelfCorrectionTrigger`
 - **Profile Resolution**: Explicit profiles (Core, Standard, Full) and custom user-controlled surface toggles
-- **Runtime State**: Persistent state stored in `state/`
+- **Runtime State**: Persistent state stored in Agent Zero user data at `usr/cognition_layers/state/`
 - **Verification Guardian**: Separates shell analysis, file destination analysis, content payload analysis, and credential likelihood analysis
 
 ---
@@ -101,10 +101,10 @@ surfaces:
 
 ## Runtime State
 
-Plugin-owned state is stored inside the plugin folder so learned patterns and telemetry travel with the plugin:
+Runtime state is stored outside the plugin install under Agent Zero's durable `usr` data tree, so learned patterns and telemetry survive plugin reinstalls:
 
 ```
-state/
+usr/cognition_layers/state/
 ├── config.json
 ├── profile_status.json
 ├── patterns.json
