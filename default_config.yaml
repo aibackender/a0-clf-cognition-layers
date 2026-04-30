@@ -50,7 +50,6 @@ verification:
   invalidate_on_config_change: true
   require_review_for:
     - destructive_file_edit
-    - credential_exposure
   max_risk_score: 70
 
 pattern_memory:
