@@ -31,12 +31,12 @@
         observability: { enabled: true, mode: 'standard' },
       },
       verification: {
-        protected_tools: ['code_execution_tool', 'browser_agent'],
-        protected_paths: ['/workspace', '/workspaces'],
+        protected_tools: [],
+        protected_paths: [],
         blocked_shell_patterns: ['rm -rf *', 'chmod -R 777 *'],
         allowed_domains: [],
         blocked_domains: [],
-        require_review_for: ['destructive_file_edit', 'external_write', 'credential_exposure'],
+        require_review_for: ['destructive_file_edit'],
         max_risk_score: 70,
       },
       pattern_memory: {
